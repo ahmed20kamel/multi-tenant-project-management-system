@@ -1,7 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useState } from "react";
-import { FaHome, FaFolderOpen, FaHardHat, FaUsers, FaUserTie, FaUpload, FaBuilding } from "react-icons/fa";
+import { FaHome, FaFolderOpen, FaHardHat, FaUsers, FaUserTie, FaMoneyBillWave } from "react-icons/fa";
 
 function SideItem({ to, icon: Icon, label, active }) {
   return (
@@ -14,65 +13,44 @@ function SideItem({ to, icon: Icon, label, active }) {
 
 export default function Sidebar() {
   const { pathname } = useLocation();
-  const { t, i18n } = useTranslation();
-  const isRTL = i18n.language === "ar";
-  const [logoUrl, setLogoUrl] = useState(() => {
-    return localStorage.getItem("company_logo") || "";
-  });
+  const { t } = useTranslation();
+
+  // ✅ استخدام مسار ثابت للشعار من public folder
+  // Vite يقوم تلقائياً بتقديم الملفات من public folder على المسار الجذر
+  const logoUrl = "/logo.png";
 
   const items = [
     { to: "/", label: t("sidebar_home"), icon: FaHome },
     { to: "/projects", label: t("sidebar_projects"), icon: FaFolderOpen },
+    { to: "/payments", label: t("sidebar_payments"), icon: FaMoneyBillWave },
     { to: "/owners", label: t("sidebar_owners"), icon: FaUsers },
     { to: "/consultants", label: t("sidebar_consultants"), icon: FaUserTie },
     { to: "/contractors", label: t("sidebar_contractors"), icon: FaHardHat },
   ];
-
-  const handleLogoUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const url = reader.result;
-        setLogoUrl(url);
-        localStorage.setItem("company_logo", url);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
 
   return (
     <aside className="sidebar">
       {/* Logo Section */}
       <div className="sidebar-logo-section">
         <div className="sidebar-logo-container">
-          {logoUrl ? (
-            <div className="sidebar-logo-wrapper">
-              <img src={logoUrl} alt="Company Logo" className="sidebar-logo" />
-              <label className="sidebar-logo-upload">
-                <FaUpload className="sidebar-logo-upload-icon" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleLogoUpload}
-                  style={{ display: "none" }}
-                />
-              </label>
-            </div>
-          ) : (
-            <label className="sidebar-logo-placeholder">
-              <FaBuilding className="sidebar-logo-placeholder-icon" />
-              <span className="sidebar-logo-placeholder-text">
-                {isRTL ? "رفع الشعار" : "Upload Logo"}
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleLogoUpload}
-                style={{ display: "none" }}
-              />
-            </label>
-          )}
+          <div className="sidebar-logo-wrapper">
+            <img 
+              src={logoUrl} 
+              alt="Company Logo" 
+              className="sidebar-logo"
+              loading="eager"
+              crossOrigin="anonymous"
+              onError={(e) => {
+                // إذا فشل التحميل، نحاول تحميله بدون timestamp
+                if (e.target.src.includes("?v=")) {
+                  e.target.src = "/logo.png";
+                } else {
+                  // إذا فشل مرة أخرى، نعرض placeholder
+                  console.warn("Failed to load logo from /logo.png");
+                }
+              }}
+            />
+          </div>
         </div>
       </div>
 

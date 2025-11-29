@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../services/api";
 import Button from "../components/Button";
@@ -7,9 +7,11 @@ import Dialog from "../components/Dialog";
 import PageLayout from "../components/PageLayout";
 import { getProjectTypeLabel, getContractTypeLabel } from "../utils/projectLabels";
 import { formatInternalCode } from "../utils/internalCodeFormatter";
+import { getProjectStatusLabel, getProjectStatusColor } from "../utils/projectStatus";
 
 export default function ProjectsPage() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const isAR = /^ar\b/i.test(i18n.language || "");
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +31,9 @@ export default function ProjectsPage() {
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
+  // City dropdown state
+  const [showCityDropdown, setShowCityDropdown] = useState(false);
+
 
   // ===== فلاتر منظّمة =====
   const [filters, setFilters] = useState({
@@ -38,10 +43,9 @@ export default function ProjectsPage() {
     project_type: "",
     consultant: "",
     contract_type: "",
-    has_siteplan: "any",
-    has_license: "any",
-    has_contract: "any",
-    has_awarding: "any",
+    owner_name: "",
+    phone: "",
+    email: "",
   });
 
   useEffect(() => {
@@ -75,11 +79,15 @@ export default function ProjectsPage() {
           let consultantName = null;
           let hasAwarding = false;
           let awardingData = null;
+          let contractData = null;
+          let ownersData = [];
+          let cityFromLicense = null;
 
           try {
             const { data: sp } = await api.get(`projects/${id}/siteplan/`);
             const first = Array.isArray(sp) ? sp[0] : null;
             if (first?.owners?.length) {
+              ownersData = first.owners;
               const owners = first.owners.map((o) => o?.owner_name_ar || o?.owner_name || o?.owner_name_en || "").filter(Boolean);
               if (owners.length) {
                 ownerLabel = `${t("villa_mr_ms")} ${owners[0]}${owners.length > 1 ? t("villa_mr_ms_partners") : ""}`;
@@ -93,6 +101,18 @@ export default function ProjectsPage() {
             if (firstL) {
               // استخدام design_consultant_name أو supervision_consultant_name
               consultantName = firstL.design_consultant_name || firstL.supervision_consultant_name || null;
+              // إضافة المدينة من الرخصة
+              if (firstL.city) {
+                cityFromLicense = firstL.city;
+              }
+            }
+          } catch (e) {}
+
+          try {
+            const { data: contract } = await api.get(`projects/${id}/contract/`);
+            const firstContract = Array.isArray(contract) ? contract[0] : (contract || null);
+            if (firstContract) {
+              contractData = firstContract;
             }
           } catch (e) {}
 
@@ -107,10 +127,13 @@ export default function ProjectsPage() {
 
           return { 
             ...p, 
+            city: p.city || cityFromLicense || null,
             __owner_label: ownerLabel, 
             __consultant_name: consultantName,
             __has_awarding: hasAwarding,
             __awarding_data: awardingData,
+            __contract_data: contractData,
+            __owners_data: ownersData,
           };
         })
       );
@@ -138,6 +161,46 @@ export default function ProjectsPage() {
   const getConsultantName = (p) =>
     p?.__consultant_name || p?.consultant?.name || p?.consultant_name || t("empty_value");
 
+  const getProjectStatusDisplay = (status) => {
+    if (!status) return { label: t("empty_value"), color: "#6b7280" };
+    return {
+      label: getProjectStatusLabel(status, i18n.language),
+      color: getProjectStatusColor(status),
+    };
+  };
+
+  const getCompletionStatus = (p) => {
+    const hasSiteplan = !!p?.has_siteplan;
+    const hasLicense = !!p?.has_license;
+    const hasContract = !!p?.contract_type;
+    const hasAwarding = !!p?.__has_awarding;
+
+    const missing = [];
+    if (!hasSiteplan) missing.push(t("stage_siteplan"));
+    if (!hasLicense) missing.push(t("stage_license"));
+    if (!hasContract) missing.push(t("stage_contract"));
+    if (!hasAwarding) missing.push(t("stage_awarding"));
+
+    if (missing.length === 0) {
+      return t("completion_completed");
+    }
+    return missing.join(", ");
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return t("empty_value");
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return t("empty_value");
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return isAR ? `${day}/${month}/${year}` : `${year}-${month}-${day}`;
+    } catch {
+      return t("empty_value");
+    }
+  };
+
   const filteredProjects = useMemo(() => {
     const q = filters.q.trim().toLowerCase();
     const code = filters.internal_code.trim().toLowerCase();
@@ -145,6 +208,9 @@ export default function ProjectsPage() {
     const type = filters.project_type;
     const consultant = filters.consultant;
     const ctype = filters.contract_type;
+    const ownerName = filters.owner_name.trim().toLowerCase();
+    const phone = filters.phone.trim().toLowerCase();
+    const email = filters.email.trim().toLowerCase();
 
     return projects.filter((p) => {
       const hasSiteplan = !!p?.has_siteplan;
@@ -152,6 +218,7 @@ export default function ProjectsPage() {
       const hasContract = !!p?.contract_type;
       const hasAwarding = !!p?.__has_awarding;
       const awardingData = p?.__awarding_data;
+      const ownersData = p?.__owners_data || [];
 
       const hay = [
         p?.display_name,
@@ -171,27 +238,43 @@ export default function ProjectsPage() {
         .toLowerCase();
 
       if (q && !hay.includes(q)) return false;
-      if (code && !(p?.internal_code || "").toLowerCase().includes(code)) return false;
+      
+      // الكود الداخلي - البحث بدون M prefix
+      const internalCode = (p?.internal_code || "").toLowerCase();
+      const codeToSearch = code.startsWith("m") ? code.substring(1) : code;
+      if (code && !internalCode.includes(codeToSearch)) return false;
+      
       if (city && !(p?.city || "").toLowerCase().includes(city)) return false;
       if (type && type !== (p?.project_type || "")) return false;
       if (consultant && consultant !== getConsultantName(p)) return false;
       if (ctype && ctype !== (p?.contract_type || "")) return false;
 
-      if (filters.has_siteplan !== "any") {
-        if (filters.has_siteplan === "yes" && !hasSiteplan) return false;
-        if (filters.has_siteplan === "no" && hasSiteplan) return false;
+      // البحث باسم المالك
+      if (ownerName) {
+        const ownerMatch = ownersData.some((o) => {
+          const nameAr = (o?.owner_name_ar || "").toLowerCase();
+          const nameEn = (o?.owner_name_en || "").toLowerCase();
+          return nameAr.includes(ownerName) || nameEn.includes(ownerName);
+        });
+        if (!ownerMatch) return false;
       }
-      if (filters.has_license !== "any") {
-        if (filters.has_license === "yes" && !hasLicense) return false;
-        if (filters.has_license === "no" && hasLicense) return false;
+
+      // البحث برقم الهاتف
+      if (phone) {
+        const phoneMatch = ownersData.some((o) => {
+          const ownerPhone = (o?.phone || "").toLowerCase();
+          return ownerPhone.includes(phone);
+        });
+        if (!phoneMatch) return false;
       }
-      if (filters.has_contract !== "any") {
-        if (filters.has_contract === "yes" && !hasContract) return false;
-        if (filters.has_contract === "no" && hasContract) return false;
-      }
-      if (filters.has_awarding !== "any") {
-        if (filters.has_awarding === "yes" && !hasAwarding) return false;
-        if (filters.has_awarding === "no" && hasAwarding) return false;
+
+      // البحث بالإيميل
+      if (email) {
+        const emailMatch = ownersData.some((o) => {
+          const ownerEmail = (o?.email || "").toLowerCase();
+          return ownerEmail.includes(email);
+        });
+        if (!emailMatch) return false;
       }
 
       return true;
@@ -210,6 +293,7 @@ export default function ProjectsPage() {
   const projectTypes = useMemo(() => uniqueValues((p) => p?.project_type), [projects]);
   const consultants = useMemo(() => uniqueValues(getConsultantName), [projects]);
   const contractTypes = useMemo(() => uniqueValues((p) => p?.contract_type), [projects]);
+  const cities = useMemo(() => uniqueValues((p) => p?.city).sort(), [projects]);
 
   const isAllSelected =
     filteredProjects.length > 0 && filteredProjects.every((p) => selectedIds.has(p.id));
@@ -287,17 +371,32 @@ export default function ProjectsPage() {
   const clearFilters = () =>
     setFilters({
       q: "", internal_code: "", city: "", project_type: "",
-      consultant: "", contract_type: "", has_siteplan: "any",
-      has_license: "any", has_contract: "any", has_awarding: "any",
+      consultant: "", contract_type: "", owner_name: "",
+      phone: "", email: "",
     });
+
+  const createProject = () => {
+    // ✅ الانتقال مباشرة إلى الويزارد بدون إنشاء مشروع
+    navigate("/wizard/new");
+  };
 
   return (
     <PageLayout loading={loading} loadingText={t("loading_projects")}>
-      <div className="container">
-        <div className="card">
-          <div className="prj-header">
-            <h1 className="prj-title">{t("projects_title")}</h1>
-            <p className="prj-subtitle">{t("projects_subtitle")}</p>
+      <div className="list-page">
+          <div className="list-header">
+            <div>
+              <h1 className="list-title">{t("projects_title")}</h1>
+              <p className="prj-subtitle">{t("projects_subtitle")}</p>
+            </div>
+            <div className="list-header__actions">
+              <Button 
+                onClick={createProject} 
+                variant="primary"
+                className="prj-btn prj-btn--primary"
+              >
+                {t("homepage_cta")}
+              </Button>
+            </div>
           </div>
 
           {/* شريط الفلاتر */}
@@ -309,18 +408,66 @@ export default function ProjectsPage() {
                 value={filters.q}
                 onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} 
               />
-              <input 
-                className="prj-input" 
-                placeholder={t("project_view_internal_code").replace(":", "")} 
-                value={filters.internal_code}
-                onChange={(e) => setFilters((f) => ({ ...f, internal_code: e.target.value }))} 
-              />
-              <input 
-                className="prj-input" 
-                placeholder={t("city")} 
-                value={filters.city}
-                onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))} 
-              />
+              <div className="pos-relative">
+                <input 
+                  className="prj-input" 
+                  placeholder={t("project_view_internal_code").replace(":", "")} 
+                  value={filters.internal_code}
+                  onChange={(e) => {
+                    let value = e.target.value;
+                    // إزالة M إذا كان المستخدم يكتبه
+                    if (value.startsWith("M") || value.startsWith("m")) {
+                      value = value.substring(1);
+                    }
+                    setFilters((f) => ({ ...f, internal_code: value }));
+                  }}
+                  style={{ paddingLeft: "24px" }}
+                />
+                <span style={{ 
+                  position: "absolute", 
+                  left: "8px", 
+                  top: "50%", 
+                  transform: "translateY(-50%)",
+                  color: "#666",
+                  pointerEvents: "none"
+                }}>M</span>
+              </div>
+              <div className="pos-relative">
+                <input 
+                  className="prj-input" 
+                  placeholder={t("city")} 
+                  value={filters.city}
+                  onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))}
+                  onFocus={() => setShowCityDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowCityDropdown(false), 200)}
+                />
+                {showCityDropdown && cities.length > 0 && (
+                  <div className="dropdown-list" style={{ 
+                    position: "absolute", 
+                    top: "100%", 
+                    left: 0, 
+                    right: 0, 
+                    zIndex: 1000,
+                    maxHeight: "200px",
+                    overflowY: "auto"
+                  }}>
+                    {cities
+                      .filter((c) => !filters.city || c.toLowerCase().includes(filters.city.toLowerCase()))
+                      .map((c, i) => (
+                        <div
+                          key={i}
+                          className="dropdown-item"
+                          onMouseDown={() => {
+                            setFilters((f) => ({ ...f, city: c }));
+                            setShowCityDropdown(false);
+                          }}
+                        >
+                          {c}
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
               <select 
                 className="prj-select" 
                 value={filters.project_type}
@@ -354,42 +501,24 @@ export default function ProjectsPage() {
             </div>
 
             <div className="prj-filters__grid2">
-              <select 
-                className="prj-select" 
-                value={filters.has_siteplan}
-                onChange={(e) => setFilters((f) => ({ ...f, has_siteplan: e.target.value }))}
-              >
-                <option value="any">{t("plan_all")}</option>
-                <option value="yes">{t("plan_yes")}</option>
-                <option value="no">{t("plan_no")}</option>
-              </select>
-              <select 
-                className="prj-select" 
-                value={filters.has_license}
-                onChange={(e) => setFilters((f) => ({ ...f, has_license: e.target.value }))}
-              >
-                <option value="any">{t("license_all")}</option>
-                <option value="yes">{t("license_yes")}</option>
-                <option value="no">{t("license_filter_no")}</option>
-              </select>
-              <select 
-                className="prj-select" 
-                value={filters.has_contract}
-                onChange={(e) => setFilters((f) => ({ ...f, has_contract: e.target.value }))}
-              >
-                <option value="any">{t("contract_all")}</option>
-                <option value="yes">{t("contract_yes")}</option>
-                <option value="no">{t("contract_no")}</option>
-              </select>
-              <select 
-                className="prj-select" 
-                value={filters.has_awarding}
-                onChange={(e) => setFilters((f) => ({ ...f, has_awarding: e.target.value }))}
-              >
-                <option value="any">{t("awarding_all")}</option>
-                <option value="yes">{t("awarding_yes")}</option>
-                <option value="no">{t("awarding_no")}</option>
-              </select>
+              <input 
+                className="prj-input" 
+                placeholder={t("owner_name")} 
+                value={filters.owner_name}
+                onChange={(e) => setFilters((f) => ({ ...f, owner_name: e.target.value }))} 
+              />
+              <input 
+                className="prj-input" 
+                placeholder={t("phone_number_search")} 
+                value={filters.phone}
+                onChange={(e) => setFilters((f) => ({ ...f, phone: e.target.value }))} 
+              />
+              <input 
+                className="prj-input" 
+                placeholder={t("email_search")} 
+                value={filters.email}
+                onChange={(e) => setFilters((f) => ({ ...f, email: e.target.value }))} 
+              />
               <div className="prj-filters__actions">
                 <Button variant="ghost" onClick={clearFilters}>
                   {t("clear_filters")}
@@ -441,15 +570,12 @@ export default function ProjectsPage() {
                   </th>
                   <th>#</th>
                   <th>{t("project_view_internal_code").replace(":", "")}</th>
-                  <th>{t("owner")}</th>
-                  <th>{t("type")}</th>
+                  <th>{t("project_name")}</th>
                   <th>{t("consultant")}</th>
-
-                  {/* ✅ اخفاء نوع العقد: احذف الهيدر ده */}
-                  {/* <th>{t("contract_type_label")}</th> */}
-
-                  <th>{t("status")}</th>
-                  <th>{t("action")}</th>
+                  <th>{t("project_end_date")}</th>
+                  <th>{t("project_status")}</th>
+                  <th>{t("completion_status")}</th>
+                  <th style={{ minWidth: "280px" }}>{t("action")}</th>
                 </tr>
               </thead>
 
@@ -491,39 +617,34 @@ export default function ProjectsPage() {
                         )}
                       </td>
 
-                      <td className="prj-nowrap">{getOwnerLabel(p)}</td>
-
-                      {/* ✅ النوع + سكنية جديدة */}
-                      <td className="prj-nowrap">
-                        {p?.project_type
-                          ? `${getProjectTypeLabel(p.project_type, i18n.language)} سكنية جديدة`
-                          : t("empty_value")}
-                      </td>
+                      <td className="prj-nowrap">{p?.display_name || p?.name || t("empty_value")}</td>
 
                       <td className="prj-nowrap">{getConsultantName(p)}</td>
 
-                      {/* ✅ اخفاء نوع العقد: احذف الخلية دي */}
-                      {/* 
                       <td className="prj-nowrap">
-                        {p?.contract_type ? getContractTypeLabel(p.contract_type, i18n.language) : t("empty_value")}
-                      </td> 
-                      */}
+                        {p?.__contract_data?.project_end_date
+                          ? formatDate(p.__contract_data.project_end_date)
+                          : t("empty_value")}
+                      </td>
 
-                      <td>
-                        <div className="prj-badges">
-                          <span className={`prj-badge ${hasSiteplan ? "is-on" : "is-off"}`}>
-                            {t("bc_siteplan")}
-                          </span>
-                          <span className={`prj-badge ${hasLicense ? "is-on" : "is-off"}`}>
-                            {t("bc_license")}
-                          </span>
-                          <span className={`prj-badge ${hasContract ? "is-on" : "is-off"}`}>
-                            {t("bc_contract")}
-                          </span>
-                          <span className={`prj-badge ${hasAwarding ? "is-on" : "is-off"}`}>
-                            {t("bc_awarding")}
-                          </span>
+                      <td className="prj-nowrap">
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span
+                            style={{
+                              width: "12px",
+                              height: "12px",
+                              borderRadius: "50%",
+                              backgroundColor: getProjectStatusDisplay(p?.status).color,
+                              display: "inline-block",
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span>{getProjectStatusDisplay(p?.status).label}</span>
                         </div>
+                      </td>
+
+                      <td className="prj-nowrap">
+                        {getCompletionStatus(p)}
                       </td>
 
                       <td className="prj-actions">
@@ -550,8 +671,7 @@ export default function ProjectsPage() {
 
               <tfoot>
                 <tr>
-                  {/* ✅ كان 9 بقى 8 بعد حذف عمود نوع العقد */}
-                  <td colSpan={8} className="prj-foot prj-muted">
+                  <td colSpan={9} className="prj-foot prj-muted">
                     {t("matching_total", { count: filteredProjects.length, total: projects.length })}
                   </td>
                 </tr>
@@ -559,7 +679,6 @@ export default function ProjectsPage() {
             </table>
             </div>
           )}
-        </div>
 
         {/* Toast */}
         {toast && (

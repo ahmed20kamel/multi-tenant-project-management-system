@@ -35,9 +35,14 @@ const INITIAL_FORM = {
   building_license_file: null,
   consultant_same: true,
   design_consultant_name: "",
+  design_consultant_name_en: "",
   design_consultant_license_no: "",
   supervision_consultant_name: "",
+  supervision_consultant_name_en: "",
   supervision_consultant_license_no: "",
+  contractor_name_en: "",
+  contractor_phone: "",
+  contractor_email: "",
 };
 
 export function normalizeOwner(o) {
@@ -80,9 +85,16 @@ export default function useLicense(projectId, i18n) {
             ...s,
             consultant_same: s.consultant_same ?? true,
             design_consultant_name: s.design_consultant_name || "",
+            design_consultant_name_en: s.design_consultant_name_en || "",
             design_consultant_license_no: s.design_consultant_license_no || "",
             supervision_consultant_name: s.supervision_consultant_name || "",
+            supervision_consultant_name_en: s.supervision_consultant_name_en || "",
             supervision_consultant_license_no: s.supervision_consultant_license_no || "",
+            contractor_name: s.contractor_name || "",
+            contractor_name_en: s.contractor_name_en || "",
+            contractor_license_no: s.contractor_license_no || "",
+            contractor_phone: s.contractor_phone || "",  // ✅ التأكد من التحميل
+            contractor_email: s.contractor_email || "",  // ✅ التأكد من التحميل
             issue_date: toInputDate(s.issue_date),
             last_issue_date: toInputDate(s.last_issue_date),
             expiry_date: toInputDate(s.expiry_date),

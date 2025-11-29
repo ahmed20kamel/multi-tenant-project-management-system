@@ -8,13 +8,14 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
-from .models import Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding
+from .models import Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment
 from .serializers import (
     ProjectSerializer,
     SitePlanSerializer,
     BuildingLicenseSerializer,
     ContractSerializer,
     AwardingSerializer,
+    PaymentSerializer,
 )
 from decimal import Decimal
 from datetime import datetime
@@ -224,3 +225,60 @@ class AwardingViewSet(_ProjectChildViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return super().create(request, *args, **kwargs)
+
+
+# ===============================
+# Payment (ManyToOne - يمكن أن يكون بدون مشروع)
+# ===============================
+class PaymentViewSet(viewsets.ModelViewSet):
+    queryset = Payment.objects.all().order_by("-date", "-created_at")
+    serializer_class = PaymentSerializer
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
+
+    def get_queryset(self):
+        try:
+            queryset = Payment.objects.all().order_by("-date", "-created_at")
+            project_pk = self.kwargs.get("project_pk")
+            if project_pk:
+                queryset = queryset.filter(project_id=project_pk)
+            return queryset
+        except Exception as e:
+            # ✅ إذا كان الجدول غير موجود، نرجع queryset فارغ
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting payments queryset: {e}")
+            return Payment.objects.none()
+
+    def list(self, request, *args, **kwargs):
+        try:
+            return super().list(request, *args, **kwargs)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error listing payments: {e}")
+            # ✅ إرجاع قائمة فارغة بدلاً من 500 error
+            return Response([], status=status.HTTP_200_OK)
+
+    def perform_create(self, serializer):
+        project_pk = self.kwargs.get("project_pk")
+        if project_pk:
+            project = get_object_or_404(Project, pk=project_pk)
+            payment = serializer.save(project=project)
+            # ✅ تحديث حالة المشروع تلقائياً بعد إضافة الدفعة (سيتم عبر signal)
+        else:
+            payment = serializer.save()
+            # ✅ إذا كان هناك مشروع مرتبط، نحدث حالته (سيتم عبر signal)
+
+    def perform_update(self, serializer):
+        payment = serializer.save()
+        # ✅ تحديث حالة المشروع تلقائياً بعد تعديل الدفعة (سيتم عبر signal)
+    
+    def perform_destroy(self, instance):
+        project_id = instance.project_id if instance.project else None
+        instance.delete()
+        # ✅ تحديث حالة المشروع تلقائياً بعد حذف الدفعة (سيتم عبر signal)
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["request"] = self.request
+        return ctx

@@ -15,12 +15,15 @@ import NumberField from "../../../components/fields/NumberField";
 import Button from "../../../components/Button";
 import FileAttachmentView from "../../../components/FileAttachmentView";
 import FileUpload from "../../../components/FileUpload";
+import ContractAttachment from "../components/ContractAttachment";
+import PersonField from "../components/PersonField";
 import useContract from "../../../hooks/useContract";
 import { formatMoney, formatMoneyArabic, toIsoDate, getDayName } from "../../../utils/formatters";
 import { numberToArabicWords } from "../../../utils/numberFormatting";
 import { num, toBool, formatServerErrors, flattenEntries, labelForKey, PRIMARY_ORDER } from "../../../utils/helpers";
 import { getErrorMessage } from "../../../utils/errorHandler";
 import { extractFileNameFromUrl } from "../../../utils/fileHelpers";
+import { formatUAEPhone } from "../../../utils/inputFormatters";
 
 export default function ContractStep({ projectId, onPrev, onNext, isView: isViewProp }) {
   const { t, i18n: i18next } = useTranslation();
@@ -91,14 +94,35 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
     [t]
   );
 
-  // حساب تاريخ نهاية المشروع
+  // حساب تاريخ نهاية المشروع (يشمل التمديدات)
   useEffect(() => {
     if (!form.start_order_date || !form.project_duration_months) return;
     try {
       const d = new Date(form.start_order_date);
-      const months = Number(form.project_duration_months);
-      if (isNaN(months) || months <= 0) return;
+      let months = Number(form.project_duration_months);
+      let days = 0;
+      
+      if (isNaN(months) || months < 0) return;
+      
+      // ✅ إضافة التمديدات
+      if (Array.isArray(form.extensions) && form.extensions.length > 0) {
+        form.extensions.forEach((ext) => {
+          if (ext.months) {
+            months += Number(ext.months) || 0;
+          }
+          if (ext.days) {
+            days += Number(ext.days) || 0;
+          }
+        });
+      }
+      
+      // ✅ إضافة الشهور
       d.setMonth(d.getMonth() + months);
+      // ✅ إضافة الأيام
+      if (days > 0) {
+        d.setDate(d.getDate() + days);
+      }
+      
       const yyyy = d.getFullYear();
       const mm = String(d.getMonth() + 1).padStart(2, "0");
       const dd = String(d.getDate()).padStart(2, "0");
@@ -107,7 +131,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         setF("project_end_date", end);
       }
     } catch {}
-  }, [form.start_order_date, form.project_duration_months, setF]);
+  }, [form.start_order_date, form.project_duration_months, form.extensions, setF]);
 
   // حساب تمويل المالك تلقائيًا
   useEffect(() => {
@@ -121,7 +145,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
     }
   }, [form.total_project_value, form.total_bank_value, setF]);
 
-  // تحميل URLs الملفات
+  // تحميل URLs الملفات والمرفقات
   useEffect(() => {
     if (!projectId) return;
     (async () => {
@@ -133,6 +157,57 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
             setStartOrderFileUrl(contractData.start_order_file);
             setStartOrderFileName(extractFileNameFromUrl(contractData.start_order_file));
           }
+          
+          // ✅ تحميل المرفقات الديناميكية
+          if (contractData.attachments && Array.isArray(contractData.attachments) && contractData.attachments.length > 0) {
+            const loadedAttachments = contractData.attachments.map(att => ({
+              type: att.type || "main_contract",
+              date: att.date || "",
+              notes: att.notes || "",
+              file: null, // لا نحمل File object
+              file_url: att.file_url || null,
+              file_name: att.file_name || (att.file_url ? extractFileNameFromUrl(att.file_url) : null),
+            }));
+            setF("attachments", loadedAttachments);
+          } else if (!form.attachments || form.attachments.length === 0) {
+            // ✅ إذا لم تكن هناك مرفقات، نتحقق من الملفات القديمة للتوافق
+            const oldAttachments = [];
+            if (contractData.contract_file) {
+              oldAttachments.push({
+                type: "main_contract",
+                date: contractData.contract_date || "",
+                notes: "",
+                file: null,
+                file_url: contractData.contract_file,
+                file_name: extractFileNameFromUrl(contractData.contract_file),
+              });
+            }
+            if (contractData.contract_appendix_file) {
+              oldAttachments.push({
+                type: "appendix",
+                date: contractData.contract_date || "",
+                notes: "",
+                file: null,
+                file_url: contractData.contract_appendix_file,
+                file_name: extractFileNameFromUrl(contractData.contract_appendix_file),
+              });
+            }
+            if (contractData.contract_explanation_file) {
+              oldAttachments.push({
+                type: "explanation",
+                date: contractData.contract_date || "",
+                notes: "",
+                file: null,
+                file_url: contractData.contract_explanation_file,
+                file_name: extractFileNameFromUrl(contractData.contract_explanation_file),
+              });
+            }
+            if (oldAttachments.length > 0) {
+              setF("attachments", oldAttachments);
+            }
+          }
+          
+          // الملفات القديمة (للتوافق)
           if (contractData.contract_file) {
             setContractFileUrl(contractData.contract_file);
             setContractFileName(extractFileNameFromUrl(contractData.contract_file));
@@ -148,7 +223,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         }
       } catch (e) {}
     })();
-  }, [projectId]);
+  }, [projectId, setF]);
 
   // بناء الحمولة والحفظ
   const buildPayload = () => {
@@ -193,7 +268,10 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
       contract_date: toIsoDate(form.contract_date),
       owners: form.owners || [],
       contractor_name: form.contractor_name || "",
+      contractor_name_en: form.contractor_name_en || "",
       contractor_trade_license: form.contractor_trade_license || "",
+      contractor_phone: form.contractor_phone || "",
+      contractor_email: form.contractor_email || "",
       total_project_value: total,
       total_bank_value: isHousing ? bank : 0,
       total_owner_value: isHousing ? owner : total,
@@ -211,15 +289,26 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
       start_order_exists: toBool(form.has_start_order),
       start_order_date: form.start_order_date || null,
       project_end_date: form.project_end_date || null,
+      general_notes: form.general_notes || "",
     };
 
-    // إذا كان هناك ملف جديد، نستخدم FormData
-    const hasFiles = 
-      (form.start_order_file && form.start_order_file instanceof File) ||
-      (form.contract_file && form.contract_file instanceof File) ||
-      (form.contract_appendix_file && form.contract_appendix_file instanceof File) ||
-      (form.contract_explanation_file && form.contract_explanation_file instanceof File);
-    
+    // ✅ تنظيف التمديدات قبل الإرسال
+    const cleanExtensions = (form.extensions || [])
+      .filter(ext => {
+        // ✅ إزالة التمديدات الفارغة تماماً
+        if (!ext || (typeof ext !== "object")) return false;
+        // ✅ إزالة التمديدات التي لا تحتوي على أي بيانات
+        const hasReason = ext.reason && String(ext.reason).trim() !== "";
+        const hasDays = ext.days !== undefined && ext.days !== null && Number(ext.days) > 0;
+        const hasMonths = ext.months !== undefined && ext.months !== null && Number(ext.months) > 0;
+        return hasReason || hasDays || hasMonths;
+      })
+      .map(ext => ({
+        reason: String(ext.reason || "").trim(),
+        days: Number(ext.days) || 0,
+        months: Number(ext.months) || 0,
+      }));
+
     // ✅ دائماً نستخدم FormData (حتى لو لم يكن هناك ملفات) لضمان إرسال owners بشكل صحيح
     const fd = new FormData();
     
@@ -249,7 +338,44 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
       }
     });
     
-    // إضافة الملفات بشكل منفصل
+    // ✅ إضافة التمديدات بعد التنظيف
+    fd.append("extensions", JSON.stringify(cleanExtensions));
+    
+    // ✅ إضافة المرفقات الديناميكية (مع التنظيف)
+    if (form.attachments && Array.isArray(form.attachments) && form.attachments.length > 0) {
+      // ✅ تنظيف المرفقات - إزالة المرفقات الفارغة
+      const validAttachments = form.attachments.filter((att, idx) => {
+        if (!att || typeof att !== "object") return false;
+        // ✅ مرفق صالح إذا كان له نوع أو ملف أو ملاحظات
+        const hasType = att.type && String(att.type).trim() !== "";
+        const hasFile = att.file instanceof File || (att.file_url && String(att.file_url).trim() !== "");
+        const hasNotes = att.notes && String(att.notes).trim() !== "";
+        return hasType || hasFile || hasNotes;
+      });
+      
+      const attachmentsData = validAttachments.map((att, idx) => {
+        const attData = {
+          type: String(att.type || "main_contract").trim(),
+          date: toIsoDate(att.date) || null,
+          notes: String(att.notes || "").trim(),
+          file_url: att.file_url || null,
+          file_name: att.file_name || null,
+        };
+        return attData;
+      });
+      fd.append("attachments", JSON.stringify(attachmentsData));
+      
+      // ✅ إضافة الملفات الجديدة (باستخدام الفهرس الصحيح من validAttachments)
+      validAttachments.forEach((att, idx) => {
+        if (att.file instanceof File) {
+          fd.append(`attachments[${idx}][file]`, att.file, att.file.name);
+        }
+      });
+    } else {
+      fd.append("attachments", "[]");
+    }
+    
+    // إضافة الملفات القديمة (للتوافق)
     if (form.start_order_file && form.start_order_file instanceof File) {
       fd.append("start_order_file", form.start_order_file);
     }
@@ -273,6 +399,17 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
     }
     try {
       const payload = buildPayload();
+      
+      // ✅ طباعة payload للتحقق (في وضع التطوير فقط)
+      if (process.env.NODE_ENV === "development") {
+        console.log("=== Contract Payload Debug ===");
+        console.log("Extensions:", payload.get("extensions"));
+        console.log("Attachments:", payload.get("attachments"));
+        console.log("Owners:", payload.get("owners"));
+        // طباعة جميع المفاتيح
+        console.log("All FormData keys:", Array.from(payload.keys()));
+      }
+      
       const isHousing = form.contract_classification === "housing_loan_program";
       const hasFiles = 
         (form.start_order_file && form.start_order_file instanceof File) ||
@@ -319,6 +456,11 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
       if (form.contract_file instanceof File) setF("contract_file", null);
       if (form.contract_appendix_file instanceof File) setF("contract_appendix_file", null);
       if (form.contract_explanation_file instanceof File) setF("contract_explanation_file", null);
+      
+      // ✅ إرسال حدث لتحديث بيانات المشروع في WizardPage
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("contract-updated", { detail: { projectId } }));
+      }
       
       // عند الحفظ وانتقال للخطوة التالية، نضع في وضع view
       updateViewMode(true);
@@ -376,12 +518,48 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         </div>
       )}
 
-      {/* 1) تصنيف العقد */}
-      <h4>1) {t("contract.sections.classification")}</h4>
-      {viewMode ? (
-        <div className="card">
-          <div className="p-8 row row--align-center row--gap-8">
-            <span>{CONTRACT_CLASSIFICATION.find(m => m.value === form.contract_classification)?.label || t("empty_value")}</span>
+      {/* الأقسام الثلاثة الأولى جنب بعض */}
+      <div className="form-grid cols-3" style={{ gap: "var(--space-6)", alignItems: "flex-start" }}>
+        {/* 1) تصنيف العقد */}
+        <div style={{
+          background: "var(--surface)",
+          borderRadius: "12px",
+          padding: "24px",
+          border: "1px solid var(--border)",
+          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.05)"
+        }}>
+          <h4 className="wizard-section-title" style={{ marginBottom: "20px" }}>1) {t("contract.sections.classification")}</h4>
+          {viewMode ? (
+            <div className="card">
+              <div className="p-8 row row--align-center row--gap-8">
+              <span>{CONTRACT_CLASSIFICATION.find(m => m.value === form.contract_classification)?.label || t("empty_value")}</span>
+              {form.contract_classification && (
+                <InfoTip
+                  align="start"
+                  text={
+                    form.contract_classification === "housing_loan_program"
+                      ? t("contract.classification.housing_loan_program.desc")
+                      : t("contract.classification.private_funding.desc")
+                  }
+                />
+              )}
+              </div>
+            </div>
+          ) : (
+            <div className="row row--align-center flex-wrap">
+            <div className="chips flex-1">
+              {CONTRACT_CLASSIFICATION.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  className={`chip ${form.contract_classification === m.value ? "active" : ""}`}
+                  onClick={() => setF("contract_classification", m.value)}
+                  title={m.desc}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
             {form.contract_classification && (
               <InfoTip
                 align="start"
@@ -392,227 +570,359 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                 }
               />
             )}
-          </div>
-        </div>
-      ) : (
-        <div className="row row--align-center flex-wrap">
-          <div className="chips flex-1">
-            {CONTRACT_CLASSIFICATION.map((m) => (
-              <button
-                key={m.value}
-                type="button"
-                className={`chip ${form.contract_classification === m.value ? "active" : ""}`}
-                onClick={() => setF("contract_classification", m.value)}
-                title={m.desc}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-          {form.contract_classification && (
-            <InfoTip
-              align="start"
-              text={
-                form.contract_classification === "housing_loan_program"
-                  ? t("contract.classification.housing_loan_program.desc")
-                  : t("contract.classification.private_funding.desc")
-              }
-            />
+            </div>
           )}
         </div>
-      )}
 
-      {/* 2) نوع العقد */}
-      <h4 className="mt-16">2) {t("contract.sections.type")}</h4>
-      {viewMode ? (
-        <div className="form-grid cols-4">
-          <ViewRow
-            label={t("contract.fields.contract_type")}
-            value={CONTRACT_TYPES.find((x) => x.value === form.contract_type)?.label || form.contract_type}
-          />
-          <Field label={t("contract.fields.contract_file") || "ملف العقد"}>
-            <FileAttachmentView
-              fileUrl={contractFileUrl}
-              fileName={contractFileName || (contractFileUrl ? extractFileNameFromUrl(contractFileUrl) : "") || (form.contract_file?.name || "")}
-              projectId={projectId}
-              endpoint={`projects/${projectId}/contract/`}
-            />
-          </Field>
-          <Field label={t("contract.fields.contract_appendix_file") || "ملف ملحق العقد"}>
-            <FileAttachmentView
-              fileUrl={contractAppendixFileUrl}
-              fileName={contractAppendixFileName || (contractAppendixFileUrl ? extractFileNameFromUrl(contractAppendixFileUrl) : "") || (form.contract_appendix_file?.name || "")}
-              projectId={projectId}
-              endpoint={`projects/${projectId}/contract/`}
-            />
-          </Field>
-          <Field label={t("contract.fields.contract_explanation_file") || "ملف شرح العقد"}>
-            <FileAttachmentView
-              fileUrl={contractExplanationFileUrl}
-              fileName={contractExplanationFileName || (contractExplanationFileUrl ? extractFileNameFromUrl(contractExplanationFileUrl) : "") || (form.contract_explanation_file?.name || "")}
-              projectId={projectId}
-              endpoint={`projects/${projectId}/contract/`}
-            />
-          </Field>
-        </div>
-      ) : (
-        <div className="form-grid cols-4">
+        {/* 2) نوع العقد */}
+        <div style={{
+          background: "var(--surface)",
+          borderRadius: "12px",
+          padding: "24px",
+          border: "1px solid var(--border)",
+          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.05)"
+        }}>
+          <h4 className="wizard-section-title" style={{ marginBottom: "20px" }}>2) {t("contract.sections.type")}</h4>
           <Field label={t("contract.fields.contract_type")}>
-            <RtlSelect
-              className="rtl-select"
-              dir={isAR ? "rtl" : "ltr"}
-              options={CONTRACT_TYPES}
-              value={form.contract_type}
-              onChange={(v) => setF("contract_type", v)}
-              placeholder={t("contract.placeholders.select_contract_type")}
-            />
-          </Field>
-          <Field label={t("contract.fields.contract_file") || "ملف العقد"}>
-            <FileUpload
-              value={form.contract_file}
-              onChange={(file) => {
-                setF("contract_file", file);
-                if (file) {
-                  setContractFileName(file.name);
-                }
-              }}
-              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-              maxSizeMB={10}
-              showPreview={true}
-              existingFileUrl={contractFileUrl}
-              existingFileName={contractFileName || (contractFileUrl ? extractFileNameFromUrl(contractFileUrl) : "")}
-              onRemoveExisting={() => {
-                setF("contract_file", null);
-                setContractFileName("");
-              }}
-              compressionOptions={{
-                maxSizeMB: 1,
-                maxWidthOrHeight: 1920,
-              }}
-            />
-          </Field>
-          <Field label={t("contract.fields.contract_appendix_file") || "ملف ملحق العقد"}>
-            <FileUpload
-              value={form.contract_appendix_file}
-              onChange={(file) => {
-                setF("contract_appendix_file", file);
-                if (file) {
-                  setContractAppendixFileName(file.name);
-                }
-              }}
-              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-              maxSizeMB={10}
-              showPreview={true}
-              existingFileUrl={contractAppendixFileUrl}
-              existingFileName={contractAppendixFileName || (contractAppendixFileUrl ? extractFileNameFromUrl(contractAppendixFileUrl) : "")}
-              onRemoveExisting={() => {
-                setF("contract_appendix_file", null);
-                setContractAppendixFileName("");
-              }}
-              compressionOptions={{
-                maxSizeMB: 1,
-                maxWidthOrHeight: 1920,
-              }}
-            />
-          </Field>
-          <Field label={t("contract.fields.contract_explanation_file") || "ملف شرح العقد"}>
-            <FileUpload
-              value={form.contract_explanation_file}
-              onChange={(file) => {
-                setF("contract_explanation_file", file);
-                if (file) {
-                  setContractExplanationFileName(file.name);
-                }
-              }}
-              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-              maxSizeMB={10}
-              showPreview={true}
-              existingFileUrl={contractExplanationFileUrl}
-              existingFileName={contractExplanationFileName || (contractExplanationFileUrl ? extractFileNameFromUrl(contractExplanationFileUrl) : "")}
-              onRemoveExisting={() => {
-                setF("contract_explanation_file", null);
-                setContractExplanationFileName("");
-              }}
-              compressionOptions={{
-                maxSizeMB: 1,
-                maxWidthOrHeight: 1920,
-              }}
-            />
+            {viewMode ? (
+              <div>{CONTRACT_TYPES.find((x) => x.value === form.contract_type)?.label || form.contract_type}</div>
+            ) : (
+              <RtlSelect
+                className="rtl-select"
+                dir={isAR ? "rtl" : "ltr"}
+                options={CONTRACT_TYPES}
+                value={form.contract_type}
+                onChange={(v) => setF("contract_type", v)}
+                placeholder={t("contract.placeholders.select_contract_type")}
+              />
+            )}
           </Field>
         </div>
-      )}
 
-      {/* 3) بيانات العقد */}
-      <h4 className="mt-16">3) {t("contract.sections.details")}</h4>
-      {viewMode ? (
-        <div className="form-grid cols-3">
-          <ViewRow
-            label={t("contract.fields.contract_number")}
-            value={form.tender_no}
-            tip={isHousing ? t("contract.notes.housing_tender_info") : undefined}
-          />
-          <ViewRow
-            label={t("contract.fields.contract_date")}
-            value={form.contract_date}
-            tip={form.contract_date ? `${t("contract.labels.day")}: ${getDayName(form.contract_date, i18next.language)}` : undefined}
-          />
-        </div>
-      ) : (
-        <div className="form-grid cols-3">
-          <Field label={t("contract.fields.contract_number")}>
-            <div className="row row--align-center row--gap-8">
-              <input
-                className="input"
+        {/* 3) بيانات العقد */}
+        <div style={{
+          background: "var(--surface)",
+          borderRadius: "12px",
+          padding: "24px",
+          border: "1px solid var(--border)",
+          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.05)"
+        }}>
+          <h4 className="wizard-section-title" style={{ marginBottom: "20px" }}>3) {t("contract.sections.details")}</h4>
+          {viewMode ? (
+            <div className="form-grid cols-1" style={{ gap: "var(--space-4)" }}>
+              <ViewRow
+                label={t("contract.fields.contract_number")}
                 value={form.tender_no}
-                onChange={(e) => setF("tender_no", e.target.value)}
-                placeholder={t("contract.placeholders.contract_number")}
+                tip={isHousing ? t("contract.notes.housing_tender_info") : undefined}
               />
-              {isHousing && <InfoTip align="start" text={t("contract.notes.housing_tender_info")} />}
-            </div>
-          </Field>
-          <Field label={t("contract.fields.contract_date")}>
-            <div className="row row--align-center row--gap-8">
-              <input
-                className="input"
-                type="date"
-                value={form.contract_date || ""}
-                onChange={(e) => setF("contract_date", e.target.value)}
+              <ViewRow
+                label={t("contract.fields.contract_date")}
+                value={form.contract_date}
+                tip={form.contract_date ? `${t("contract.labels.day")}: ${getDayName(form.contract_date, i18next.language)}` : undefined}
               />
-              {form.contract_date && (
-                <InfoTip
-                  align="start"
-                  text={`${t("contract.labels.day")}: ${getDayName(form.contract_date, i18next.language)}`}
-                />
-              )}
             </div>
-          </Field>
+          ) : (
+            <div className="form-grid cols-1" style={{ gap: "var(--space-4)" }}>
+              <Field label={t("contract.fields.contract_number")}>
+                <div className="row row--align-center row--gap-8">
+                  <input
+                    className="input"
+                    value={form.tender_no}
+                    onChange={(e) => setF("tender_no", e.target.value)}
+                    placeholder={t("contract.placeholders.contract_number")}
+                  />
+                  {isHousing && <InfoTip align="start" text={t("contract.notes.housing_tender_info")} />}
+                </div>
+              </Field>
+              <Field label={t("contract.fields.contract_date")}>
+                <div className="row row--align-center row--gap-8">
+                  <input
+                    className="input"
+                    type="date"
+                    value={form.contract_date || ""}
+                    onChange={(e) => setF("contract_date", e.target.value)}
+                  />
+                  {form.contract_date && (
+                    <InfoTip
+                      align="start"
+                      text={`${t("contract.labels.day")}: ${getDayName(form.contract_date, i18next.language)}`}
+                    />
+                  )}
+                </div>
+              </Field>
+            </div>
+          )}
         </div>
-      )}
+      </div>
+
+      {/* 2) مرفقات العقد */}
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">2) مرفقات العقد</h4>
+        {viewMode ? (
+          <div>
+            {form.attachments && form.attachments.length > 0 ? (
+              <div style={{ 
+                display: "grid", 
+                gridTemplateColumns: "repeat(3, 1fr)", 
+                gap: "var(--space-4)"
+              }}>
+                {form.attachments.map((att, idx) => {
+                  // ✅ حساب عدد الملاحق السابقة (من نوع appendix فقط) - للعرض فقط
+                  const previousAppendices = form.attachments
+                    .slice(0, idx)
+                    .filter(a => a.type === "appendix");
+                  const appendixNumber = previousAppendices.length;
+                  
+                  return (
+                    <ContractAttachment
+                      key={idx}
+                      attachment={att}
+                      index={appendixNumber} // ✅ للعرض فقط (appendixNumber)
+                      attachmentIndex={idx} // ✅ الفهرس الفعلي (للتوافق)
+                      isView={true}
+                      onUpdate={() => {}}
+                      onRemove={() => {}}
+                      canRemove={false}
+                      projectId={projectId}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="card text-center prj-muted p-20">
+                لا توجد مرفقات
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            {form.attachments && form.attachments.length > 0 && (
+              <div style={{ 
+                display: "grid", 
+                gridTemplateColumns: "repeat(3, 1fr)", 
+                gap: "var(--space-4)"
+              }}>
+                {form.attachments.map((att, idx) => {
+                  // ✅ حساب عدد الملاحق السابقة (من نوع appendix فقط) - للعرض فقط
+                  const previousAppendices = form.attachments
+                    .slice(0, idx)
+                    .filter(a => a.type === "appendix");
+                  const appendixNumber = previousAppendices.length;
+                  
+                  return (
+                    <ContractAttachment
+                      key={idx}
+                      attachment={att}
+                      index={appendixNumber} // ✅ للعرض فقط (appendixNumber)
+                      attachmentIndex={idx} // ✅ الفهرس الفعلي في المصفوفة
+                      isView={false}
+                      onUpdate={(attIndex, field, value) => {
+                        // ✅ استخدام attIndex مباشرة (هو idx الفعلي)
+                        const updated = [...form.attachments];
+                        updated[attIndex] = { ...updated[attIndex], [field]: value };
+                        setF("attachments", updated);
+                      }}
+                      onRemove={(attIndex) => {
+                        // ✅ استخدام attIndex مباشرة (هو idx الفعلي)
+                        const updated = form.attachments.filter((_, i) => i !== attIndex);
+                        setF("attachments", updated);
+                      }}
+                      canRemove={true}
+                      projectId={projectId}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          
+            <div className="mt-12">
+              <Button
+                onClick={() => {
+                  const newAttachment = {
+                    type: "", // ✅ لا نوع افتراضي - المستخدم يختار
+                    date: "",
+                    file: null,
+                    file_url: null,
+                    file_name: null,
+                    notes: "",
+                  };
+                  setF("attachments", [...(form.attachments || []), newAttachment]);
+                }}
+                style={{ background: "#f97316", color: "white" }}
+              >
+                + إضافة مرفق
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* 4) أطراف العقد */}
-      <h4 className="mt-16">4) {t("contract.sections.parties")}</h4>
-      <div className="form-grid cols-2">
-        <Field label={t("contract.fields.first_party_owner")}>
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">4) {t("contract.sections.parties")}</h4>
+        <div className="form-grid cols-2" style={{ gap: "24px", alignItems: "flex-start" }}>
+        {/* الطرف الأول - المالك */}
+        <div style={{ 
+          background: "var(--surface)", 
+          borderRadius: "12px", 
+          padding: "24px",
+          border: "1px solid var(--border)"
+        }}>
+          <h5 style={{ 
+            margin: "0 0 20px 0", 
+            fontSize: "18px", 
+            fontWeight: "600",
+            color: "var(--text)",
+            paddingBottom: "12px",
+            borderBottom: "2px solid var(--primary)"
+          }}>
+            {t("contract.fields.first_party_owner") || "الطرف الأول (المالك)"}
+          </h5>
           {form.owners?.length ? (
-            <div className="mini lh-18">
+            <div>
               {form.owners.map((o, i) => {
-                const entries = flattenEntries(o);
-                const sorted = entries.sort(([kA], [kB]) => {
-                  const a = PRIMARY_ORDER.indexOf(kA.split(".")[0]);
-                  const b = PRIMARY_ORDER.indexOf(kB.split(".")[0]);
-                  if (a !== -1 || b !== -1) {
-                    return (a === -1 ? 999 : a) - (b === -1 ? 999 : b);
-                  }
-                  return kA.localeCompare(kB);
-                });
-
                 return (
-                  <div key={i} className="owner-block">
-                    {sorted.map(([k, v]) => (
-                      <div key={k}>
-                        <strong>{labelForKey(k)}:</strong> {String(v)}
-                      </div>
-                    ))}
+                  <div key={i} style={{ marginBottom: i < form.owners.length - 1 ? "24px" : "0" }}>
+                    <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
+                      {/* ✅ بيانات للعرض فقط - من SitePlan */}
+                      <Field label={t("owner_name_ar") || "الاسم (عربي)"}>
+                        {viewMode ? (
+                          <div style={{ 
+                            padding: "12px", 
+                            background: "var(--surface-2)", 
+                            borderRadius: "8px",
+                            fontSize: "16px",
+                            color: "var(--text)",
+                            fontWeight: "500"
+                          }}>
+                            {o.owner_name_ar || t("empty_value")}
+                          </div>
+                        ) : (
+                          <input
+                            className="input"
+                            readOnly
+                            value={o.owner_name_ar || ""}
+                            style={{
+                              background: "var(--surface-2)",
+                              color: "var(--text)",
+                              cursor: "default"
+                            }}
+                          />
+                        )}
+                      </Field>
+                      
+                      <Field label={t("owner_name_en") || "الاسم (English)"}>
+                        {viewMode ? (
+                          <div style={{ 
+                            padding: "12px", 
+                            background: "var(--surface-2)", 
+                            borderRadius: "8px",
+                            fontSize: "16px",
+                            color: "var(--text)",
+                            fontWeight: "500"
+                          }}>
+                            {o.owner_name_en || t("empty_value")}
+                          </div>
+                        ) : (
+                          <input
+                            className="input"
+                            type="text"
+                            value={o.owner_name_en || ""}
+                            onChange={(e) => {
+                              const updated = [...form.owners];
+                              updated[i] = { ...updated[i], owner_name_en: e.target.value };
+                              setF("owners", updated);
+                            }}
+                            placeholder="Enter name in English"
+                          />
+                        )}
+                      </Field>
+                      
+                      <Field label={t("id_number") || "رقم الهوية"}>
+                        {viewMode ? (
+                          <div style={{ 
+                            padding: "12px", 
+                            background: "var(--surface-2)", 
+                            borderRadius: "8px",
+                            fontSize: "16px",
+                            color: "var(--text)",
+                            fontWeight: "500"
+                          }}>
+                            {o.id_number || t("empty_value")}
+                          </div>
+                        ) : (
+                          <input
+                            className="input"
+                            readOnly
+                            value={o.id_number || ""}
+                            style={{
+                              background: "var(--surface-2)",
+                              color: "var(--text)",
+                              cursor: "default"
+                            }}
+                          />
+                        )}
+                      </Field>
+                      
+                      {/* ✅ حقل تاريخ الانتهاء مخفي */}
+                      <div></div>
+                      
+                      {/* ✅ حقول قابلة للإدخال - الهاتف والبريد */}
+                      <Field label={t("phone") || "الهاتف"}>
+                        {viewMode ? (
+                          <div style={{ 
+                            padding: "12px", 
+                            background: "var(--surface-2)", 
+                            borderRadius: "8px",
+                            fontSize: "16px",
+                            color: "var(--text)",
+                            fontWeight: "500"
+                          }}>
+                            {o.phone || t("empty_value")}
+                          </div>
+                        ) : (
+                          <input
+                            className="input"
+                            type="tel"
+                            value={o.phone || ""}
+                            onChange={(e) => {
+                              const formatted = formatUAEPhone(e.target.value);
+                              const updated = [...form.owners];
+                              updated[i] = { ...updated[i], phone: formatted };
+                              setF("owners", updated);
+                            }}
+                            placeholder="+971XXXXXXXXX"
+                          />
+                        )}
+                      </Field>
+                      
+                      <Field label={t("email") || "البريد الإلكتروني"}>
+                        {viewMode ? (
+                          <div style={{ 
+                            padding: "12px", 
+                            background: "var(--surface-2)", 
+                            borderRadius: "8px",
+                            fontSize: "16px",
+                            color: "var(--text)",
+                            fontWeight: "500"
+                          }}>
+                            {o.email || t("empty_value")}
+                          </div>
+                        ) : (
+                          <input
+                            className="input"
+                            type="email"
+                            value={o.email || ""}
+                            onChange={(e) => {
+                              const updated = [...form.owners];
+                              updated[i] = { ...updated[i], email: e.target.value };
+                              setF("owners", updated);
+                            }}
+                            placeholder="example@email.com"
+                          />
+                        )}
+                      </Field>
+                    </div>
                   </div>
                 );
               })}
@@ -622,48 +932,51 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
               <InfoTip align="start" text={t("contract.notes.no_owners_siteplan")} />
             </div>
           )}
-        </Field>
+          </div>
 
-        <Field label={t("contract.fields.second_party_contractor")}>
-          {viewMode ? (
-            <>
-              <div className="row row--align-center row--gap-8">
-                <span>{form.contractor_name || t("empty_value")}</span>
-                <InfoTip align="start" text={t("contract.notes.autofill_from_license")} />
-              </div>
-              <div className="row mt-8 row--gap-8">
-                <div>{form.contractor_trade_license || t("empty_value")}</div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="row row--align-center row--gap-8">
-                <input
-                  className="input"
-                  placeholder={t("contract.placeholders.contractor_name")}
-                  value={form.contractor_name}
-                  onChange={(e) => setF("contractor_name", e.target.value)}
-                />
-                <InfoTip align="start" text={t("contract.notes.autofill_from_license")} />
-              </div>
-              <div className="row mt-8 row--gap-8">
-                <input
-                  className="input"
-                  placeholder={t("contract.placeholders.trade_license")}
-                  value={form.contractor_trade_license}
-                  onChange={(e) => setF("contractor_trade_license", e.target.value)}
-                />
-              </div>
-            </>
-          )}
-        </Field>
+          {/* الطرف الثاني - المقاول */}
+        <div style={{ 
+          background: "var(--surface)", 
+          borderRadius: "12px", 
+          padding: "24px",
+          border: "1px solid var(--border)"
+        }}>
+          <h5 style={{ 
+            margin: "0 0 20px 0", 
+            fontSize: "18px", 
+            fontWeight: "600",
+            color: "var(--text)",
+            paddingBottom: "12px",
+            borderBottom: "2px solid var(--primary)"
+          }}>
+            {t("contract.fields.second_party_contractor") || "الطرف الثاني (المقاول)"}
+          </h5>
+          <PersonField
+            type="contractor"
+            label={t("contractor")}
+            licenseLabel={t("contractor_lic")}
+            nameValue={form.contractor_name}
+            nameEnValue={form.contractor_name_en}
+            licenseValue={form.contractor_trade_license}
+            phoneValue={form.contractor_phone}
+            emailValue={form.contractor_email}
+            onNameChange={(v) => setF("contractor_name", v)}
+            onNameEnChange={(v) => setF("contractor_name_en", v)}
+            onLicenseChange={(v) => setF("contractor_trade_license", v)}
+            onPhoneChange={(v) => setF("contractor_phone", v)}
+            onEmailChange={(v) => setF("contractor_email", v)}
+            isView={viewMode}
+          />
+        </div>
+        </div>
       </div>
 
       {/* 5) قيمة العقد والمدة */}
-      <h4 className="mt-16">5) {t("contract.sections.value_duration")}</h4>
-      {viewMode ? (
-        <div className="form-grid cols-4">
-          <Field label={t("contract_amount")}>
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">5) {t("contract.sections.value_duration")} (القيم المالية الحقيقية)</h4>
+        {viewMode ? (
+          <div className="form-grid cols-4" style={{ gap: "var(--space-4)" }}>
+            <Field label={t("contract_amount")}>
             <div>
               <div className="font-mono fw-600">
                 {formatMoney(form.total_project_value)}
@@ -677,8 +990,8 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                     </div>
                   )}
             </div>
-          </Field>
-          {isHousing && (
+            </Field>
+            {isHousing && (
             <>
               <Field label={t("contract.fields.total_bank_value")}>
                 <div>
@@ -711,11 +1024,11 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                 </div>
               </Field>
             </>
-          )}
-          <ViewRow label={t("contract.fields.project_duration_months")} value={form.project_duration_months} />
-        </div>
-      ) : (
-        <div className="form-grid cols-4">
+            )}
+            <ViewRow label={t("contract.fields.project_duration_months")} value={form.project_duration_months} />
+          </div>
+        ) : (
+          <div className="form-grid cols-4" style={{ gap: "var(--space-4)" }}>
           <Field label={t("contract.fields.total_project_value")}>
             <NumberField
               value={form.total_project_value}
@@ -735,6 +1048,11 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                   value={form.total_owner_value}
                   onChange={() => {}}
                   readOnly
+                  style={{
+                    background: "var(--surface-2)",
+                    color: "var(--text)",
+                    cursor: "default"
+                  }}
                 />
                 {form.total_owner_value && (
                   <div className="mini mt-4">
@@ -754,42 +1072,80 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
               placeholder={t("empty_value")}
             />
           </Field>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {/* 6) أتعاب الاستشاري */}
-      <h4 className="mt-16">6) {t("contract.sections.consultant_fees")}</h4>
-      <h5 className="mt-8">{t("contract.fees.owner.title")}</h5>
-      <ConsultantFeesSection prefix="owner" form={form} setF={setF} isView={viewMode} isAR={isAR} />
-
-      <h5 className="mt-16">{t("contract.fees.bank.title")}</h5>
-      <ConsultantFeesSection prefix="bank" form={form} setF={setF} isView={viewMode} isAR={isAR} />
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">6) {t("contract.sections.consultant_fees")}</h4>
+        <div className="form-grid cols-2" style={{ gap: "var(--space-6)", alignItems: "flex-start" }}>
+          <div style={{
+            background: "var(--surface)",
+            borderRadius: "12px",
+            padding: "24px",
+            border: "1px solid var(--border)"
+          }}>
+            <h5 style={{
+              margin: "0 0 20px 0",
+              fontSize: "18px",
+              fontWeight: "600",
+              color: "var(--text)",
+              paddingBottom: "12px",
+              borderBottom: "2px solid var(--primary)"
+            }}>
+              {t("contract.fees.owner.title") || "الجزء الممول من المالك"}
+            </h5>
+            <ConsultantFeesSection prefix="owner" form={form} setF={setF} isView={viewMode} isAR={isAR} />
+          </div>
+          
+          <div style={{
+            background: "var(--surface)",
+            borderRadius: "12px",
+            padding: "24px",
+            border: "1px solid var(--border)"
+          }}>
+            <h5 style={{
+              margin: "0 0 20px 0",
+              fontSize: "18px",
+              fontWeight: "600",
+              color: "var(--text)",
+              paddingBottom: "12px",
+              borderBottom: "2px solid var(--primary)"
+            }}>
+              {t("contract.fees.bank.title") || "الجزء الممول من البنك"}
+            </h5>
+            <ConsultantFeesSection prefix="bank" form={form} setF={setF} isView={viewMode} isAR={isAR} />
+          </div>
+        </div>
+      </div>
 
       {/* 7) أمر المباشرة */}
-      <h4 className="mt-16">7) {t("start_order_title")}</h4>
-      {viewMode ? (
-        <div className="form-grid cols-3">
-          <ViewRow
-            label={t("start_order_exists")}
-            value={form.has_start_order === "yes" ? t("yes") : t("no")}
-          />
-          {form.has_start_order === "yes" && (
-            <>
-              <Field label={t("start_order_file")}>
-                <FileAttachmentView
-                  fileUrl={startOrderFileUrl}
-                  fileName={startOrderFileName || (startOrderFileUrl ? extractFileNameFromUrl(startOrderFileUrl) : "") || (form.start_order_file?.name || "")}
-                  projectId={projectId}
-                  endpoint={`projects/${projectId}/contract/`}
-                />
-              </Field>
-              <ViewRow label={t("start_order_date")} value={form.start_order_date} />
-              <ViewRow label={t("project_end_date_calculated")} value={form.project_end_date} />
-            </>
-          )}
-        </div>
-      ) : (
-        <div className="form-grid cols-3">
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">7) {t("start_order_title")}</h4>
+        {viewMode ? (
+          <div className="form-grid cols-3" style={{ gap: "var(--space-4)" }}>
+            <ViewRow
+              label={t("start_order_exists")}
+              value={form.has_start_order === "yes" ? t("yes") : t("no")}
+            />
+            {form.has_start_order === "yes" && (
+              <>
+                <Field label={t("start_order_file")}>
+                  <FileAttachmentView
+                    fileUrl={startOrderFileUrl}
+                    fileName={startOrderFileName || (startOrderFileUrl ? extractFileNameFromUrl(startOrderFileUrl) : "") || (form.start_order_file?.name || "")}
+                    projectId={projectId}
+                    endpoint={`projects/${projectId}/contract/`}
+                  />
+                </Field>
+                <ViewRow label={t("start_order_date")} value={form.start_order_date} />
+                <ViewRow label={t("project_end_date_calculated")} value={form.project_end_date} />
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="form-grid cols-3" style={{ gap: "var(--space-4)" }}>
           <Field label={t("start_order_exists")}>
             <YesNoChips
               value={form.has_start_order}
@@ -839,15 +1195,208 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                     />
                   </Field>
                   <Field label={t("project_end_date_calculated")}>
-                    <input className="input" value={form.project_end_date} readOnly />
+                    <input
+                      className="input"
+                      value={form.project_end_date}
+                      readOnly
+                      style={{
+                        background: "var(--surface-2)",
+                        color: "var(--text)",
+                        cursor: "default"
+                      }}
+                    />
                   </Field>
                 </>
               )}
             </>
           )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
+      {/* 8) التمديدات */}
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">8) التمديدات</h4>
+        {viewMode ? (
+          <div>
+            {form.extensions && form.extensions.length > 0 ? (
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(auto-fit, minmax(300px, 1fr))`,
+                gap: "16px"
+              }}>
+                {form.extensions.map((ext, idx) => (
+                  <div key={idx} style={{
+                    background: "var(--surface)",
+                    borderRadius: "12px",
+                    padding: "20px",
+                    border: "1px solid var(--border)",
+                    direction: "rtl"
+                  }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+                      <Field label="سبب التمديد">
+                        <input
+                          className="input"
+                          type="text"
+                          value={ext.reason || ""}
+                          readOnly
+                          style={{
+                            background: "var(--surface-2)",
+                            color: "var(--text)",
+                            cursor: "default"
+                          }}
+                          dir="rtl"
+                        />
+                      </Field>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-4)" }}>
+                        <Field label="مدة التمديد (أيام)">
+                          <input
+                            className="input"
+                            type="number"
+                            value={ext.days || 0}
+                            readOnly
+                            style={{
+                              background: "var(--surface-2)",
+                              color: "var(--text)",
+                              cursor: "default"
+                            }}
+                            dir="rtl"
+                          />
+                        </Field>
+                        <Field label="مدة التمديد (شهور)">
+                          <input
+                            className="input"
+                            type="number"
+                            value={ext.months || 0}
+                            readOnly
+                            style={{
+                              background: "var(--surface-2)",
+                              color: "var(--text)",
+                              cursor: "default"
+                            }}
+                            dir="rtl"
+                          />
+                        </Field>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="row row--align-center row--gap-8">
+                <InfoTip align="start" text="لا توجد تمديدات" />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            {form.extensions && form.extensions.length > 0 && (
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(auto-fit, minmax(300px, 1fr))`,
+                gap: "16px"
+              }}>
+                {form.extensions.map((ext, idx) => (
+                  <div key={idx} style={{
+                    background: "var(--surface)",
+                    borderRadius: "12px",
+                    padding: "20px",
+                    border: "1px solid var(--border)",
+                    direction: "rtl"
+                  }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+                      <Field label="سبب التمديد">
+                        <input
+                          className="input"
+                          type="text"
+                          value={ext.reason || ""}
+                          onChange={(e) => {
+                            const updated = [...form.extensions];
+                            updated[idx] = { ...updated[idx], reason: e.target.value };
+                            setF("extensions", updated);
+                          }}
+                          placeholder="أدخل سبب التمديد"
+                          dir="rtl"
+                        />
+                      </Field>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-4)" }}>
+                        <Field label="مدة التمديد (أيام)">
+                          <NumberField
+                            value={ext.days || ""}
+                            onChange={(v) => {
+                              const updated = [...form.extensions];
+                              updated[idx] = { ...updated[idx], days: v ? Number(v) : 0 };
+                              setF("extensions", updated);
+                            }}
+                            min={0}
+                            placeholder="0"
+                            dir="rtl"
+                          />
+                        </Field>
+                        <Field label="مدة التمديد (شهور)">
+                          <NumberField
+                            value={ext.months || ""}
+                            onChange={(v) => {
+                              const updated = [...form.extensions];
+                              updated[idx] = { ...updated[idx], months: v ? Number(v) : 0 };
+                              setF("extensions", updated);
+                            }}
+                            min={0}
+                            placeholder="0"
+                            dir="rtl"
+                          />
+                        </Field>
+                      </div>
+                    </div>
+                    <div className={`row ${isAR ? "row--justify-start" : "row--justify-end"} mt-8`}>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          const updated = form.extensions.filter((_, i) => i !== idx);
+                          setF("extensions", updated);
+                        }}
+                      >
+                        حذف
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className={`row ${isAR ? "row--justify-start" : "row--justify-end"} mt-8`}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const updated = [...(form.extensions || []), { reason: "", days: 0, months: 0 }];
+                  setF("extensions", updated);
+                }}
+              >
+                + إضافة تمديد
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 9) الملاحظات العامة */}
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">9) ملاحظات عامة</h4>
+        {viewMode ? (
+          <Field label="ملاحظات عامة">
+            <div className="pre-wrap">{form.general_notes || t("empty_value")}</div>
+          </Field>
+        ) : (
+          <Field label="ملاحظات عامة">
+            <textarea
+              className="input"
+              rows={5}
+              value={form.general_notes || ""}
+              onChange={(e) => setF("general_notes", e.target.value)}
+              placeholder="أدخل الملاحظات العامة..."
+            />
+          </Field>
+        )}
+      </div>
 
       {!viewMode && (
         <StepActions

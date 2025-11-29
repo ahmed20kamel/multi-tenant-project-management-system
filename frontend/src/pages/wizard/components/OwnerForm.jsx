@@ -9,6 +9,7 @@ import FileUpload from "../../../components/FileUpload";
 import { NATIONALITIES } from "../../../utils/constants";
 import { handleEmiratesIdInput } from "../../../utils/idFormatters";
 import { extractFileNameFromUrl } from "../../../utils/fileHelpers";
+import { formatOwnerName, formatUAEPhone, calculateBirthDateFromEmiratesId } from "../../../utils/inputFormatters";
 
 export const EMPTY_OWNER = {
   owner_name_ar: "",
@@ -25,7 +26,7 @@ export const EMPTY_OWNER = {
   email: "",
 };
 
-export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, canRemove, isAR, idAttachmentUrl, projectId, idAttachmentFileName }) {
+export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, canRemove, isAR, idAttachmentUrl, projectId, idAttachmentFileName, hideContactInfo = false }) {
   const { t } = useTranslation();
   const nationalityOptions = NATIONALITIES.map(n => ({
     value: n.value,
@@ -43,14 +44,27 @@ export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, ca
           <ViewRow label={t("phone")} value={owner.phone} />
           <ViewRow label={t("email")} value={owner.email} />
           <ViewRow label={t("id_number")} value={owner.id_number} />
+          {owner.birth_date && (
+            <ViewRow label={t("birth_date") || "تاريخ الميلاد"} value={owner.birth_date} />
+          )}
           {owner.nationality !== "Emirati" && (
             <ViewRow label={t("issue_date")} value={owner.id_issue_date} />
           )}
           <ViewRow label={t("expiry_date")} value={owner.id_expiry_date} />
           <Field label={t("id_attachment")}>
             <FileAttachmentView
-              fileUrl={idAttachmentUrl}
-              fileName={idAttachmentFileName || (idAttachmentUrl ? extractFileNameFromUrl(idAttachmentUrl) : "") || (owner.id_attachment?.name || "")}
+              fileUrl={
+                // ✅ إذا كان owner.id_attachment هو string (URL)، نستخدمه مباشرة
+                // ✅ وإلا نستخدم idAttachmentUrl من props
+                typeof owner.id_attachment === "string" && owner.id_attachment.trim() !== ""
+                  ? owner.id_attachment
+                  : idAttachmentUrl
+              }
+              fileName={
+                typeof owner.id_attachment === "string" && owner.id_attachment.trim() !== ""
+                  ? extractFileNameFromUrl(owner.id_attachment)
+                  : (idAttachmentFileName || (idAttachmentUrl ? extractFileNameFromUrl(idAttachmentUrl) : "") || (owner.id_attachment?.name || ""))
+              }
               projectId={projectId}
               endpoint={`projects/${projectId}/siteplan/`}
             />
@@ -75,7 +89,10 @@ export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, ca
           <input
             className="input"
             value={owner.owner_name_en}
-            onChange={(e) => onUpdate(index, "owner_name_en", e.target.value)}
+            onChange={(e) => {
+              const formatted = formatOwnerName(e.target.value);
+              onUpdate(index, "owner_name_en", formatted);
+            }}
           />
         </Field>
         <Field label={t("nationality")}>
@@ -89,31 +106,49 @@ export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, ca
         </Field>
       </div>
 
-      <div className="form-grid cols-3 mt-8">
-        <Field label={t("phone")}>
-          <input
-            className="input"
-            value={owner.phone}
-            onChange={(e) => onUpdate(index, "phone", e.target.value)}
-          />
-        </Field>
-        <Field label={t("email")}>
-          <input
-            className="input"
-            type="email"
-            value={owner.email}
-            onChange={(e) => onUpdate(index, "email", e.target.value)}
-          />
-        </Field>
-        <div />
-      </div>
+      {!hideContactInfo && (
+        <div className="form-grid cols-3 mt-8">
+          <Field label={t("phone")}>
+            <input
+              className="input"
+              type="tel"
+              value={owner.phone}
+              onChange={(e) => {
+                const formatted = formatUAEPhone(e.target.value);
+                onUpdate(index, "phone", formatted);
+              }}
+              placeholder="+971XXXXXXXXX"
+            />
+          </Field>
+          <Field label={t("email")}>
+            <input
+              className="input"
+              type="email"
+              value={owner.email}
+              onChange={(e) => onUpdate(index, "email", e.target.value)}
+            />
+          </Field>
+          <div />
+        </div>
+      )}
 
       <div className="form-grid cols-4 mt-8">
         <Field label={t("id_number")}>
           <input
             className="input"
             value={owner.id_number || ""}
-            onChange={(e) => handleEmiratesIdInput(e, (v) => onUpdate(index, "id_number", v))}
+            onChange={(e) => {
+              handleEmiratesIdInput(e, (v) => {
+                onUpdate(index, "id_number", v);
+                // ✅ حساب تاريخ الميلاد تلقائياً
+                if (v && v.replace(/[-\s]/g, "").length === 15) {
+                  const birthDate = calculateBirthDateFromEmiratesId(v);
+                  if (birthDate) {
+                    onUpdate(index, "birth_date", birthDate);
+                  }
+                }
+              });
+            }}
             maxLength={18}
             placeholder={t("id_placeholder")}
           />
@@ -138,13 +173,23 @@ export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, ca
         </Field>
         <Field label={t("id_attachment")}>
           <FileUpload
-            value={owner.id_attachment}
+            value={owner.id_attachment instanceof File ? owner.id_attachment : null}
             onChange={(file) => onUpdate(index, "id_attachment", file)}
             accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
             maxSizeMB={10}
             showPreview={true}
-            existingFileUrl={idAttachmentUrl}
-            existingFileName={idAttachmentFileName || (idAttachmentUrl ? extractFileNameFromUrl(idAttachmentUrl) : "")}
+            existingFileUrl={
+              // ✅ إذا كان owner.id_attachment هو string (URL)، نستخدمه مباشرة
+              // ✅ وإلا نستخدم idAttachmentUrl من props
+              typeof owner.id_attachment === "string" && owner.id_attachment.trim() !== ""
+                ? owner.id_attachment
+                : idAttachmentUrl
+            }
+            existingFileName={
+              typeof owner.id_attachment === "string" && owner.id_attachment.trim() !== ""
+                ? extractFileNameFromUrl(owner.id_attachment)
+                : (idAttachmentFileName || (idAttachmentUrl ? extractFileNameFromUrl(idAttachmentUrl) : ""))
+            }
             onRemoveExisting={() => onUpdate(index, "id_attachment", null)}
             compressionOptions={{
               maxSizeMB: 1,
@@ -166,14 +211,18 @@ export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, ca
           </select>
         </Field>
         <Field label={t("share_percent")}>
-          <input
-            className="input"
-            type="number"
-            min="0"
-            max="100"
-            value={owner.share_percent}
-            onChange={(e) => onUpdate(index, "share_percent", e.target.value)}
-          />
+          <div style={{ position: "relative" }}>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              max="100"
+              value={owner.share_percent}
+              onChange={(e) => onUpdate(index, "share_percent", e.target.value)}
+              style={{ paddingRight: "30px" }}
+            />
+            <span style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>%</span>
+          </div>
         </Field>
         <Field label={t("action")}>
           <Button

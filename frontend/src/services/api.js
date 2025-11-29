@@ -55,13 +55,38 @@ api.interceptors.response.use(
   (err) => {
     const status = err?.response?.status;
     const data = err?.response?.data;
+    
+    // ✅ معالجة HTML errors - تحويلها إلى رسالة خطأ مناسبة
+    if (data && typeof data === "string" && (data.trim().startsWith("<!DOCTYPE") || data.trim().startsWith("<html"))) {
+      // محاولة استخراج رسالة خطأ من HTML
+      const titleMatch = data.match(/<title>(.*?)<\/title>/i);
+      const h1Match = data.match(/<h1[^>]*>(.*?)<\/h1>/i);
+      const errorMatch = data.match(/OperationalError|DatabaseError|IntegrityError|(\w+Error)/i);
+      
+      let errorMessage = "Server Error";
+      if (titleMatch) {
+        errorMessage = titleMatch[1];
+      } else if (h1Match) {
+        errorMessage = h1Match[1];
+      } else if (errorMatch) {
+        errorMessage = errorMatch[0];
+      }
+      
+      // استبدال HTML error بـ JSON error object
+      err.response.data = {
+        detail: errorMessage,
+        html_error: true,
+        status: status || 500
+      };
+    }
+    
     console.groupCollapsed(
       `[API ERROR] ${status ?? "?"} ${err.config?.method?.toUpperCase()} ${
         err.config?.url
       }`
     );
     console.log("Request:", err.config);
-    console.log("Response:", data);
+    console.log("Response:", err.response?.data || data);
     console.groupEnd();
     return Promise.reject(err);
   }

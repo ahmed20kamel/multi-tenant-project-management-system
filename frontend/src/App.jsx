@@ -5,6 +5,7 @@ import Layout from "./components/Layout";
 // صفحات رئيسية
 import HomePage from "./pages/HomePage";
 import ProjectsPage from "./pages/ProjectsPage";
+import PaymentsPage from "./pages/PaymentsPage";
 import OwnersPage from "./pages/OwnersPage";
 import ConsultantsPage from "./pages/ConsultantsPage";
 import ContractorsPage from "./pages/ContractorsPage";
@@ -38,6 +39,9 @@ export default function App() {
         {/* قائمة المشاريع */}
         <Route path="/projects" element={<ProjectsPage />} />
 
+        {/* قائمة الدفعات */}
+        <Route path="/payments" element={<PaymentsPage />} />
+
         {/* قائمة الملاك */}
         <Route path="/owners" element={<OwnersPage />} />
 
@@ -49,6 +53,9 @@ export default function App() {
 
         {/* محاولة فتح المعالج بدون projectId → رجوع للقائمة */}
         <Route path="/projects/wizard" element={<Navigate to="/projects" replace />} />
+
+        {/* المعالج لمشروع جديد (بدون إنشاء فوري) */}
+        <Route path="/wizard/new" element={<WizardPage />} />
 
         {/* المعالج بمشروع محدد */}
         <Route path="/projects/:projectId/wizard" element={<WizardPage />} />

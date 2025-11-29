@@ -214,7 +214,7 @@ export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
   }, [isView]);
 
   if (!license || !siteplan)
-    return <div className="card mt-12">{t("loading_data")}</div>;
+    return <div className="card mt-12">جاري تحميل البيانات...</div>;
 
   /* استخراج اسم المالك */
   const owners = siteplan.owners || [];
@@ -222,7 +222,7 @@ export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
 
   if (owners.length > 0) {
     ownerFullName = owners[0].owner_name_ar || owners[0].owner_name_en || "";
-    if (owners.length > 1) ownerFullName += ` ${t("and_partners")}`;
+    if (owners.length > 1) ownerFullName += ` وشركاؤه`;
   }
 
   /* تحديد الاستشاري */
@@ -232,7 +232,7 @@ export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
 
   const save = async () => {
     if (!projectId) {
-      setErrorMsg(t("open_specific_project_to_save"));
+      setErrorMsg("يرجى فتح مشروع محدد للحفظ");
       return;
     }
 
@@ -251,23 +251,29 @@ export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
         if (created?.id) setExistingId(created.id);
       }
       setErrorMsg("");
+      
+      // ✅ إرسال حدث لتحديث بيانات المشروع في WizardPage
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("awarding-updated", { detail: { projectId } }));
+      }
+      
       // ✅ أمر الترسية هو الخطوة الأخيرة - دائماً ننتقل إلى قائمة المشاريع بعد الحفظ
       setLocalIsView(true);
       navigate("/projects");
     } catch (err) {
       const serverData = err?.response?.data;
-      const fallback = err?.message || (serverData ? JSON.stringify(serverData, null, 2) : t("save_failed"));
+      const fallback = err?.message || (serverData ? JSON.stringify(serverData, null, 2) : "فشل الحفظ");
       setErrorMsg(fallback);
     }
   };
 
   return (
-    <WizardShell title={t("awarding_gulf_bank_contract_info")}>
+    <WizardShell title="أمر الترسية وعقد بنك الخليج">
       <Dialog
         open={!!errorMsg}
-        title={t("error")}
+        title="خطأ"
         desc={<pre className="pre-wrap m-0">{errorMsg}</pre>}
-        confirmLabel={t("ok")}
+        confirmLabel="موافق"
         onClose={() => setErrorMsg("")}
         onConfirm={() => setErrorMsg("")}
       />
@@ -275,143 +281,223 @@ export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
       {localIsView && (
         <div className={`row ${isAR ? "justify-start" : "justify-end"} mb-12`}>
           <Button variant="secondary" onClick={() => setLocalIsView(false)}>
-            {t("edit")}
+            تعديل
           </Button>
         </div>
       )}
 
       {/* ===================================== */}
-      {/* 🔵 البلوك الأول — التاريخ + الاستشاري */}
+      {/* 🔵 القسم الأول — تاريخ أمر الترسية + الاستشاري + رقم تسجيل الاستشاري */}
       {/* ===================================== */}
-      <div className="form-grid cols-3 mt-16">
-        {/* تاريخ أمر الترسية */}
-        <Field label={t("awarding_date")}>
-          {localIsView ? (
-            <div className="card">
-              <div className="p-8">{awardDate || t("empty_value")}</div>
-            </div>
-          ) : (
-            <input
-              type="date"
-              className="input"
-              value={awardDate}
-              onChange={(e) => setAwardDate(e.target.value)}
-            />
-          )}
-        </Field>
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">1) المعلومات الأساسية</h4>
+        <div className="form-grid cols-3" style={{ gap: "var(--space-4)" }}>
+          {/* تاريخ أمر الترسية */}
+          <Field label="تاريخ أمر الترسية">
+            {localIsView ? (
+              <input
+                className="input"
+                type="text"
+                value={awardDate || ""}
+                readOnly
+                style={{
+                  background: "var(--surface-2)",
+                  color: "var(--text)",
+                  cursor: "default"
+                }}
+                dir="rtl"
+              />
+            ) : (
+              <input
+                type="date"
+                className="input"
+                value={awardDate}
+                onChange={(e) => setAwardDate(e.target.value)}
+                dir="rtl"
+              />
+            )}
+          </Field>
 
-        {/* الاستشاري */}
-        <Field label={t("consultant_from_license")}>
-          <div className="card">
-            <div className="p-8">{consultantToShow || t("empty_value")}</div>
-          </div>
-        </Field>
-
-        {/* رقم تسجيل الاستشاري */}
-        <Field label={t("consultant_registration_number")}>
-          {localIsView ? (
-            <div className="card">
-              <div className="p-8">{registrationNumber || t("empty_value")}</div>
-            </div>
-          ) : (
+          {/* الاستشاري */}
+          <Field label="الاستشاري (من الرخصة)">
             <input
               className="input"
-              value={registrationNumber}
-              onChange={(e) => {
-                let v = e.target.value.replace(/^VR-/i, "").replace(/[^0-9]/g, "");
-                setRegistrationNumber("VR-" + v);
+              type="text"
+              value={consultantToShow || ""}
+              readOnly
+              style={{
+                background: "var(--surface-2)",
+                color: "var(--text)",
+                cursor: "default"
               }}
+              dir="rtl"
             />
-          )}
-        </Field>
+          </Field>
+
+          {/* رقم تسجيل الاستشاري */}
+          <Field label="رقم تسجيل الاستشاري">
+            {localIsView ? (
+              <input
+                className="input"
+                type="text"
+                value={registrationNumber || ""}
+                readOnly
+                style={{
+                  background: "var(--surface-2)",
+                  color: "var(--text)",
+                  cursor: "default"
+                }}
+                dir="rtl"
+              />
+            ) : (
+              <input
+                className="input"
+                value={registrationNumber}
+                onChange={(e) => {
+                  let v = e.target.value.replace(/^VR-/i, "").replace(/[^0-9]/g, "");
+                  setRegistrationNumber("VR-" + v);
+                }}
+                dir="rtl"
+              />
+            )}
+          </Field>
+        </div>
       </div>
 
       {/* ===================================== */}
-      {/* 🔵 البلوك الثاني — رقم المشروع + المالك */}
+      {/* 🔵 القسم الثاني — اسم المالك + رقم المشروع */}
       {/* ===================================== */}
-      <div className="form-grid cols-2 mt-12">
-        {/* رقم المشروع */}
-        <Field label={t("project_number")}>
-          {localIsView ? (
-            <div className="card">
-              <div className="p-8">{projectNumber || t("empty_value")}</div>
-            </div>
-          ) : (
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">2) معلومات المشروع والمالك</h4>
+        <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
+          {/* اسم المالك */}
+          <Field label="اسم المالك (من مخطط الأرض)">
             <input
               className="input"
-              value={projectNumber}
-              onChange={(e) => setProjectNumber(e.target.value)}
-            />
-          )}
-        </Field>
-
-        {/* اسم المالك */}
-        <Field label={t("owner_from_siteplan")}>
-          <div className="card">
-            <div className="p-8">{ownerFullName || t("empty_value")}</div>
-          </div>
-        </Field>
-      </div>
-
-      {/* ===================================== */}
-      {/* 🔵 البلوك الثالث — المقاول + تسجيله */}
-      {/* ===================================== */}
-      <div className="form-grid cols-2 mt-12">
-        {/* المقاول */}
-        <Field label={t("contractor_from_license")}>
-          <div className="card">
-            <div className="p-8">{license.contractor_name || t("empty_value")}</div>
-          </div>
-        </Field>
-
-        {/* رقم تسجيل المقاول */}
-        <Field label={t("contractor_registration_number")}>
-          {localIsView ? (
-            <div className="card">
-              <div className="p-8">{contractorRegNo || t("empty_value")}</div>
-            </div>
-          ) : (
-            <input
-              className="input"
-              value={contractorRegNo}
-              onChange={handleContractorRegChange}
-            />
-          )}
-        </Field>
-      </div>
-
-      {/* ===================================== */}
-      {/* 🔵 البلوك الرابع — إرفاق أمر الترسية */}
-      {/* ===================================== */}
-      <div className="form-grid cols-1 mt-12">
-        <Field label={t("attach_awarding_order")}>
-          {localIsView ? (
-            <FileAttachmentView
-              fileUrl={awardingFileUrl}
-              fileName={awardingFileName || awardingFile?.name}
-              projectId={projectId}
-              endpoint={`projects/${projectId}/awarding/`}
-            />
-          ) : (
-            <input
-              type="file"
-              className="input"
-              onChange={(e) => {
-                setAwardingFile(e.target.files?.[0] || null);
-                if (e.target.files?.[0]) {
-                  setAwardingFileName(e.target.files[0].name);
-                }
+              type="text"
+              value={ownerFullName || ""}
+              readOnly
+              style={{
+                background: "var(--surface-2)",
+                color: "var(--text)",
+                cursor: "default"
               }}
+              dir="rtl"
             />
-          )}
-        </Field>
+          </Field>
+
+          {/* رقم المشروع */}
+          <Field label="رقم المشروع">
+            {localIsView ? (
+              <input
+                className="input"
+                type="text"
+                value={projectNumber || ""}
+                readOnly
+                style={{
+                  background: "var(--surface-2)",
+                  color: "var(--text)",
+                  cursor: "default"
+                }}
+                dir="rtl"
+              />
+            ) : (
+              <input
+                className="input"
+                value={projectNumber}
+                onChange={(e) => setProjectNumber(e.target.value)}
+                dir="rtl"
+              />
+            )}
+          </Field>
+        </div>
+      </div>
+
+      {/* ===================================== */}
+      {/* 🔵 القسم الثالث — اسم المقاول + رقم تسجيله */}
+      {/* ===================================== */}
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">3) معلومات المقاول</h4>
+        <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
+          {/* المقاول */}
+          <Field label="اسم المقاول (من الرخصة)">
+            <input
+              className="input"
+              type="text"
+              value={license.contractor_name || ""}
+              readOnly
+              style={{
+                background: "var(--surface-2)",
+                color: "var(--text)",
+                cursor: "default"
+              }}
+              dir="rtl"
+            />
+          </Field>
+
+          {/* رقم تسجيل المقاول */}
+          <Field label="رقم تسجيل المقاول">
+            {localIsView ? (
+              <input
+                className="input"
+                type="text"
+                value={contractorRegNo || ""}
+                readOnly
+                style={{
+                  background: "var(--surface-2)",
+                  color: "var(--text)",
+                  cursor: "default"
+                }}
+                dir="rtl"
+              />
+            ) : (
+              <input
+                className="input"
+                value={contractorRegNo}
+                onChange={handleContractorRegChange}
+                dir="rtl"
+              />
+            )}
+          </Field>
+        </div>
+      </div>
+
+      {/* ===================================== */}
+      {/* 🔵 القسم الرابع — إرفاق أمر الترسية */}
+      {/* ===================================== */}
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">4) إرفاق أمر الترسية</h4>
+        <div className="form-grid cols-1" style={{ gap: "var(--space-4)" }}>
+          <Field label="إرفاق أمر الترسية">
+            {localIsView ? (
+              <FileAttachmentView
+                fileUrl={awardingFileUrl}
+                fileName={awardingFileName || awardingFile?.name}
+                projectId={projectId}
+                endpoint={`projects/${projectId}/awarding/`}
+              />
+            ) : (
+              <input
+                type="file"
+                className="input"
+                onChange={(e) => {
+                  setAwardingFile(e.target.files?.[0] || null);
+                  if (e.target.files?.[0]) {
+                    setAwardingFileName(e.target.files[0].name);
+                  }
+                }}
+                dir="rtl"
+              />
+            )}
+          </Field>
+        </div>
       </div>
 
       {!localIsView && (
         <StepActions
           onPrev={onPrev}
           onNext={save}
-          nextLabel={t("finish")}
+          nextLabel="إنهاء"
           nextClassName="primary"
         />
       )}

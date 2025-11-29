@@ -19,6 +19,7 @@ export default function ProjectSetupStep({
   onPrev,
   isView,
   onSaved, // اختياري: يُستدعى بعد الحفظ الناجح (مثلاً لإعادة تحميل المشروع في صفحة العرض)
+  isNewProject = false, // ✅ مشروع جديد بدون projectId
 }) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
@@ -134,12 +135,30 @@ export default function ProjectSetupStep({
   }, [chipsProjectTypes, villaSubcategories, contractTypes]);
 
   const handleSaveAndNext = async () => {
-    if (!projectId) return;
-
+    // ✅ التحقق من الكود الداخلي
     const formatted = formatInternalCode(internalCode);
-
-    if (!isLastDigitOdd(formatted)) {
+    if (formatted && !isLastDigitOdd(formatted)) {
       setErrorMsg(t("internal_code_last_digit_error"));
+      return;
+    }
+
+    // ✅ إذا كان مشروع جديد، نحفظ البيانات مؤقتاً فقط وننتقل للخطوة التالية
+    if (isNewProject) {
+      // تحديث setup مع الكود الداخلي
+      onChange({
+        ...value,
+        internalCode: formatted,
+      });
+      
+      if (onNext && canProceed) {
+        onNext();
+      }
+      return;
+    }
+
+    // ✅ إذا كان مشروع موجود، نحفظ في DB
+    if (!projectId) {
+      setErrorMsg(t("open_specific_project_to_save"));
       return;
     }
 
@@ -194,12 +213,12 @@ export default function ProjectSetupStep({
       )}
 
       {/* الكود الداخلي */}
-      <h4 className="inline-flex ai-center gap-6">
-        {labels.internalCodeTitle}
-        <InfoTip inline align="start" text={labels.internalCodeHelp} />
-      </h4>
-
-      {isReadOnly ? (
+      <div className="wizard-section">
+        <h4 className="wizard-section-title" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          {labels.internalCodeTitle}
+          <InfoTip inline align="start" text={labels.internalCodeHelp} />
+        </h4>
+        {isReadOnly ? (
         <div className="card" role="group" aria-label={labels.internalCodeTitle}>
           <div className="p-8 mono">
             {(internalCode && formatInternalCode(internalCode)) || t("empty_value")}
@@ -242,7 +261,8 @@ export default function ProjectSetupStep({
             </div>
           </div>
         </div>
-      )}
+        )}
+      </div>
 
       {/* تصنيف المشروع */}
       <h4 className="inline-flex ai-center gap-6 mt-12">

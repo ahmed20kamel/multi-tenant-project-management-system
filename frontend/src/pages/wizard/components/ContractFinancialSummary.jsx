@@ -29,7 +29,34 @@ export default function ContractFinancialSummary({ projectId }) {
         else setContract(null);
       })
       .catch((e) => {
-        setError(e?.response?.data || e?.message || t("contract_load_error"));
+        // ✅ معالجة أفضل للأخطاء - منع عرض HTML الخام
+        let errorMessage = t("contract_load_error");
+        
+        if (e?.response?.data) {
+          const errorData = e.response.data;
+          // إذا كان الخطأ HTML (يبدأ بـ <!DOCTYPE أو <html)
+          if (typeof errorData === "string" && (errorData.trim().startsWith("<!DOCTYPE") || errorData.trim().startsWith("<html"))) {
+            // محاولة استخراج رسالة خطأ من HTML
+            const titleMatch = errorData.match(/<title>(.*?)<\/title>/i);
+            if (titleMatch) {
+              errorMessage = `${t("contract_load_error")}: ${titleMatch[1]}`;
+            } else {
+              errorMessage = t("contract_load_error");
+            }
+          } else if (typeof errorData === "string") {
+            errorMessage = errorData;
+          } else if (errorData?.detail) {
+            errorMessage = errorData.detail;
+          } else if (errorData?.message) {
+            errorMessage = errorData.message;
+          } else {
+            errorMessage = JSON.stringify(errorData);
+          }
+        } else if (e?.message) {
+          errorMessage = e.message;
+        }
+        
+        setError(errorMessage);
         setContract(null);
       })
       .finally(() => setLoading(false));

@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
-from .models import Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding
+from .models import Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment
 
 # ---------- Project ----------
 @admin.register(Project)
@@ -192,3 +192,12 @@ class ContractAdmin(admin.ModelAdmin):
 class AwardingAdmin(admin.ModelAdmin):
     list_display = ("id", "project", "award_date", "project_number", "created_at")
     search_fields = ("project__name", "project_number", "consultant_registration_number", "contractor_registration_number")
+
+
+# ---------- Payment ----------
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = ("id", "project", "amount", "date", "description", "created_at")
+    list_filter = ("date", "project")
+    search_fields = ("project__name", "description")
+    date_hierarchy = "date"

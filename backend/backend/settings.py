@@ -33,7 +33,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
 
-    "projects",
+    "projects.apps.ProjectsConfig",  # ✅ استخدام AppConfig للتأكد من تحميل signals
 ]
 
 # =========================

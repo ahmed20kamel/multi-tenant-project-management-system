@@ -20,7 +20,15 @@ import { toApiDateUnified, toInputDateUnified } from "../../../utils/dateHelpers
 import { extractFileNameFromUrl } from "../../../utils/fileHelpers";
 import { toLocalizedUse } from "../../../utils/licenseHelpers";
 
-export default function SitePlanStep({ projectId, setup, onPrev, onNext, isView: isViewProp }) {
+export default function SitePlanStep({ 
+  projectId, 
+  setup, 
+  onPrev, 
+  onNext, 
+  isView: isViewProp,
+  isNewProject = false, // ✅ مشروع جديد بدون projectId
+  onCreateProject, // ✅ callback لإنشاء المشروع بعد الحفظ
+}) {
 
   console.log("===== SitePlanStep MOUNTED =====");
   console.log("projectId:", projectId);
@@ -348,7 +356,35 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext, isView:
   // -----------------------------------------------------
   const saveAndNext = async () => {
     console.log("========== SAVE START ==========");
+    console.log("isNewProject:", isNewProject);
 
+    // ✅ إذا كان مشروع جديد، نحفظ البيانات مؤقتاً وننشئ المشروع
+    if (isNewProject) {
+      if (!onCreateProject) {
+        setErrorMsg(t("unknown_error"));
+        return;
+      }
+
+      try {
+        const payload = buildPayload();
+        setIsUploading(true);
+        setUploadProgress(50);
+        
+        // استدعاء callback لإنشاء المشروع وحفظ البيانات
+        await onCreateProject(payload);
+        
+        setUploadProgress(100);
+        setTimeout(() => setUploadProgress(0), 1000);
+      } catch (err) {
+        console.error("Error in onCreateProject:", err);
+        setErrorMsg(err?.message || t("unknown_error"));
+        setIsUploading(false);
+        setUploadProgress(0);
+      }
+      return;
+    }
+
+    // ✅ إذا كان مشروع موجود، نحفظ في DB
     if (!projectId) {
       const msg = t("open_specific_project_to_save");
       console.error(msg);
@@ -544,8 +580,9 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext, isView:
       )}
 
       {/* 1) تفاصيل العقار */}
-      <h4>{t("property_details")}</h4>
-      {viewMode ? (
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">{t("property_details")}</h4>
+        {viewMode ? (
         <div className="form-grid cols-4">
           <ViewRow label={t("municipality")} value={form.municipality} />
           <ViewRow label={t("zone")} value={form.zone} />
@@ -585,30 +622,78 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext, isView:
             <input
               className="input"
               value={form.sector}
-              onChange={(e) => setF("sector", e.target.value)}
+              onChange={(e) => setF("sector", e.target.value.toUpperCase())}
+              style={{ textTransform: "uppercase" }}
             />
           </Field>
           <Field label={t("plot_area_sqm")}>
             <input
               className="input"
-              type="number"
-              value={form.plot_area_sqm}
-              onChange={(e) => onSqmChange(e.target.value)}
+              type="text"
+              inputMode="decimal"
+              value={form.plot_area_sqm ? form.plot_area_sqm.replace(/\B(?=(\d{3})+(?!\d))/g, ",") : ""}
+              onChange={(e) => {
+                // إزالة الفواصل أولاً
+                const withoutCommas = e.target.value.replace(/,/g, "");
+                // السماح بالأرقام والنقطة فقط
+                const cleaned = withoutCommas.replace(/[^\d.]/g, "");
+                // السماح بنقطة واحدة فقط
+                const parts = cleaned.split(".");
+                let final = parts.length > 2 ? parts[0] + "." + parts.slice(1).join("") : cleaned;
+                
+                // ✅ التحقق أثناء الإدخال: لا يزيد عن 10 أرقام قبل الفاصلة
+                const [integerPart] = final.split(".");
+                if (integerPart && integerPart.length > 10) {
+                  final = integerPart.slice(0, 10) + (parts.length > 1 ? "." + parts.slice(1).join("") : "");
+                }
+                
+                onSqmChange(final);
+              }}
             />
           </Field>
           <Field label={t("plot_area_sqft")}>
             <input
               className="input"
-              type="number"
-              value={form.plot_area_sqft}
-              onChange={(e) => onSqftChange(e.target.value)}
+              type="text"
+              inputMode="decimal"
+              value={form.plot_area_sqft ? form.plot_area_sqft.replace(/\B(?=(\d{3})+(?!\d))/g, ",") : ""}
+              onChange={(e) => {
+                // إزالة الفواصل أولاً
+                const withoutCommas = e.target.value.replace(/,/g, "");
+                // السماح بالأرقام والنقطة فقط
+                const cleaned = withoutCommas.replace(/[^\d.]/g, "");
+                // السماح بنقطة واحدة فقط
+                const parts = cleaned.split(".");
+                let final = parts.length > 2 ? parts[0] + "." + parts.slice(1).join("") : cleaned;
+                
+                // ✅ التحقق أثناء الإدخال: لا يزيد عن 12 رقم إجمالي
+                const totalDigits = final.replace(/\./g, "").length;
+                if (totalDigits > 12) {
+                  // إزالة الأرقام الزائدة من النهاية
+                  const [integerPart, decimalPart] = final.split(".");
+                  if (decimalPart) {
+                    const maxDecimal = 12 - integerPart.length;
+                    final = integerPart + "." + decimalPart.slice(0, maxDecimal);
+                  } else {
+                    final = final.slice(0, 12);
+                  }
+                }
+                
+                onSqftChange(final);
+              }}
             />
           </Field>
           <Field label={t("land_no")}>
             <input
               className="input"
+              type="text"
+              inputMode="numeric"
               value={form.land_no}
-              onChange={(e) => setF("land_no", e.target.value)}
+              onChange={(e) => {
+                // أرقام فقط
+                const cleaned = e.target.value.replace(/\D/g, "");
+                setF("land_no", cleaned);
+              }}
             />
           </Field>
           <Field label={t("allocation_type")}>
@@ -641,13 +726,15 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext, isView:
             />
           </Field>
         </div>
-      )}
+        )}
+      </div>
 
       {/* 2) بيانات المطور */}
       {form.land_use === "Investment" && (
         <>
-          <h4 className="mt-16">{t("developer_details")}</h4>
-          {viewMode ? (
+          <div className="wizard-section">
+            <h4 className="wizard-section-title">{t("developer_details")}</h4>
+            {viewMode ? (
             <div className="form-grid cols-3">
               <ViewRow label={t("developer_name")} value={form.developer_name} />
               <ViewRow label={projectNoLabel} value={form.project_no} />
@@ -678,13 +765,15 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext, isView:
                 />
               </Field>
             </div>
-          )}
+            )}
+          </div>
         </>
       )}
 
       {/* 3) معلومات المالك */}
-      <h4 className="mt-16">{t("owner_details")}</h4>
-      {viewMode ? (
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">{t("owner_details")}</h4>
+        {viewMode ? (
         <div className="stack">
           {owners.length === 0 ? (
             <div className="card text-center prj-muted p-20">
@@ -732,6 +821,7 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext, isView:
                   idAttachmentUrl={fileUrl}
                   projectId={projectId}
                   idAttachmentFileName={fileName}
+                  hideContactInfo={true}
                 />
               );
             })
@@ -740,27 +830,13 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext, isView:
             <Button onClick={addOwner}>{t("add_owner")}</Button>
           </div>
         </>
-      )}
-
-      {/* 4) ملاحظات */}
-      <h4 className="mt-16">{t("notes")}</h4>
-      {viewMode ? (
-        <Field label={t("notes_general")}>
-          <div className="pre-wrap">{form.notes || t("empty_value")}</div>
-        </Field>
-      ) : (
-        <Field label={t("notes_general")}>
-          <textarea
-            className="input"
-            value={form.notes}
-            onChange={(e) => setF("notes", e.target.value)}
-          />
-        </Field>
-      )}
+        )}
+      </div>
 
       {/* 5) بيانات المعاملة */}
-      <h4 className="mt-16">{t("application_details")}</h4>
-      {viewMode ? (
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">{t("application_details")}</h4>
+        {viewMode ? (
         <div className="form-grid cols-3">
           <ViewRow label={t("application_number")} value={form.application_number} />
           <ViewRow label={t("application_date")} value={form.application_date} />
@@ -820,7 +896,28 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext, isView:
             />
           </Field>
         </div>
-      )}
+        )}
+      </div>
+
+      {/* مصدر المشروع */}
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">مصدر المشروع</h4>
+        {viewMode ? (
+          <Field label="مصدر المشروع">
+            <div className="pre-wrap">{form.source_of_project || t("empty_value")}</div>
+          </Field>
+        ) : (
+          <Field label="مصدر المشروع">
+            <textarea
+              className="input"
+              rows={3}
+              value={form.source_of_project || ""}
+              onChange={(e) => setF("source_of_project", e.target.value)}
+              placeholder="أدخل مصدر المشروع..."
+            />
+          </Field>
+        )}
+      </div>
 
       {!viewMode && (
         <StepActions

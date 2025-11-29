@@ -2,7 +2,7 @@ import re
 import json
 from rest_framework import serializers
 from .models import (
-    Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding
+    Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment
 )
 
 # =========================
@@ -230,6 +230,8 @@ class SitePlanSerializer(serializers.ModelSerializer):
             "allocation_date",
             # المطور
             "project_no", "project_name", "developer_name",
+            # مصدر المشروع
+            "source_of_project",
             # ملاحظات
             "notes",
             # المعاملة
@@ -761,8 +763,10 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
 
     consultant_same = serializers.BooleanField(required=False)
     design_consultant_name = serializers.CharField(required=False, allow_blank=True)
+    design_consultant_name_en = serializers.CharField(required=False, allow_blank=True)
     design_consultant_license_no = serializers.CharField(required=False, allow_blank=True)
     supervision_consultant_name = serializers.CharField(required=False, allow_blank=True)
+    supervision_consultant_name_en = serializers.CharField(required=False, allow_blank=True)
     supervision_consultant_license_no = serializers.CharField(required=False, allow_blank=True)
 
     owners = serializers.JSONField(required=False)
@@ -795,11 +799,12 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
 
             # ========= الاستشاري =========
             "consultant_same",
-            "design_consultant_name", "design_consultant_license_no",
-            "supervision_consultant_name", "supervision_consultant_license_no",
+            "design_consultant_name", "design_consultant_name_en", "design_consultant_license_no",
+            "supervision_consultant_name", "supervision_consultant_name_en", "supervision_consultant_license_no",
 
             # ========= المقاول =========
-            "contractor_name", "contractor_license_no",
+            "contractor_name", "contractor_name_en", "contractor_license_no",
+            "contractor_phone", "contractor_email",  # ✅ إضافة الحقول المفقودة
 
             # الملاك داخل الرخصة
             "owners",
@@ -942,16 +947,17 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
 # Contract
 # =========================
 class ContractSerializer(serializers.ModelSerializer):
-    # الفرونت يرسل owners للعرض فقط → نتجاهلها في التخزين
-    # ✅ استخدام allow_empty=True و allow_null=True للسماح بالقوائم الفارغة والقيم null
+    # ✅ owners قابلة للتحرير وتُحفظ في قاعدة البيانات
     owners = serializers.ListField(
         child=serializers.DictField(allow_empty=True), 
-        write_only=True, 
         required=False,
         allow_empty=True,
         allow_null=True
     )
     license_snapshot = serializers.JSONField(read_only=True)
+    
+    # ✅ إرجاع start_order_exists بناءً على وجود الملف أو التاريخ
+    start_order_exists = serializers.SerializerMethodField()
     
     # الملفات
     contract_file = serializers.FileField(required=False, allow_null=True)
@@ -961,6 +967,9 @@ class ContractSerializer(serializers.ModelSerializer):
     
     # ✅ Pattern لاستخراج owners من FormData (مثل SitePlanSerializer)
     _owners_key_re = re.compile(r"^owners\[(\d+)\]\[(\w+)\]$")
+    
+    # ✅ Pattern لاستخراج attachments من FormData
+    _attachments_key_re = re.compile(r"^attachments\[(\d+)\]\[(\w+)\]$")
 
     class Meta:
         model = Contract
@@ -972,10 +981,13 @@ class ContractSerializer(serializers.ModelSerializer):
             "tender_no", "contract_date",
             # الأطراف
             "owners",  # write-only
-            "contractor_name", "contractor_trade_license",
+            "contractor_name", "contractor_name_en", "contractor_trade_license",
+            "contractor_phone", "contractor_email",
             # القيم والمدة
             "total_project_value", "total_bank_value", "total_owner_value", "project_duration_months",
             "start_order_date", "project_end_date",
+            # أمر المباشرة
+            "start_order_exists",
             # أتعاب (المالك)
             "owner_includes_consultant", "owner_fee_design_percent", "owner_fee_supervision_percent",
             "owner_fee_extra_mode", "owner_fee_extra_value",
@@ -984,11 +996,19 @@ class ContractSerializer(serializers.ModelSerializer):
             "bank_fee_extra_mode", "bank_fee_extra_value",
             # الملفات
             "contract_file", "contract_appendix_file", "contract_explanation_file", "start_order_file",
+            # المرفقات الديناميكية
+            "attachments",
+            # التمديدات
+            "extensions",
+            # الملاحظات
+            "general_notes",
             # اللقطة
             "license_snapshot",
+            # أمر المباشرة
+            "start_order_exists",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["project", "license_snapshot", "created_at", "updated_at"]
+        read_only_fields = ["project", "license_snapshot", "start_order_exists", "created_at", "updated_at"]
 
     def to_internal_value(self, data):
         """دعم owners كسلسلة JSON في multipart: owners='[{"owner_name_ar":"..."}, ...]'"""
@@ -1129,6 +1149,82 @@ class ContractSerializer(serializers.ModelSerializer):
             if field in ret and isinstance(ret.get(field), str):
                 ret[field] = ret[field].lower() in ("true", "1", "yes", "on")
         
+        # ✅ معالجة attachments
+        attachments_raw = None
+        if hasattr(self, 'initial_data') and self.initial_data:
+            attachments_raw = self.initial_data.get("attachments")
+        if attachments_raw is None and hasattr(data, 'get'):
+            attachments_raw = data.get("attachments")
+        
+        attachments_parsed = []
+        if attachments_raw is not None:
+            if isinstance(attachments_raw, str):
+                try:
+                    parsed = json.loads(attachments_raw)
+                    if isinstance(parsed, list):
+                        attachments_parsed = parsed
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    attachments_parsed = []
+            elif isinstance(attachments_raw, list):
+                attachments_parsed = attachments_raw
+        
+        # ✅ استخراج ملفات attachments من FormData
+        req = self.context.get("request")
+        if req:
+            try:
+                files_data = None
+                if hasattr(req, '_request') and hasattr(req._request, 'FILES'):
+                    files_data = req._request.FILES
+                elif hasattr(req, 'FILES'):
+                    files_data = req.FILES
+                
+                if files_data:
+                    for key in files_data.keys():
+                        # ✅ البحث عن attachments[0][file], attachments[1][file], إلخ
+                        match = re.match(r"^attachments\[(\d+)\]\[file\]$", str(key))
+                        if match:
+                            idx = int(match.group(1))
+                            if idx < len(attachments_parsed):
+                                attachments_parsed[idx]["_file"] = files_data.get(key)
+            except Exception as e:
+                logger.warning(f"Error extracting attachment files: {e}")
+        
+        ret["attachments"] = attachments_parsed if isinstance(attachments_parsed, list) else []
+        
+        # ✅ معالجة extensions
+        extensions_raw = None
+        if hasattr(self, 'initial_data') and self.initial_data:
+            extensions_raw = self.initial_data.get("extensions")
+        if extensions_raw is None and hasattr(data, 'get'):
+            extensions_raw = data.get("extensions")
+        
+        extensions_parsed = []
+        if extensions_raw is not None:
+            if isinstance(extensions_raw, str):
+                try:
+                    parsed = json.loads(extensions_raw)
+                    if isinstance(parsed, list):
+                        extensions_parsed = parsed
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    extensions_parsed = []
+            elif isinstance(extensions_raw, list):
+                extensions_parsed = extensions_raw
+        
+        # ✅ تنظيف extensions - التأكد من أن كل extension يحتوي على الحقول المطلوبة
+        cleaned_extensions = []
+        for ext in extensions_parsed:
+            if isinstance(ext, dict):
+                cleaned_ext = {
+                    "reason": str(ext.get("reason", "")).strip(),
+                    "days": int(ext.get("days", 0)) if ext.get("days") is not None else 0,
+                    "months": int(ext.get("months", 0)) if ext.get("months") is not None else 0,
+                }
+                # ✅ إضافة فقط إذا كان له بيانات
+                if cleaned_ext["reason"] or cleaned_ext["days"] > 0 or cleaned_ext["months"] > 0:
+                    cleaned_extensions.append(cleaned_ext)
+        
+        ret["extensions"] = cleaned_extensions
+        
         return ret
 
     def validate(self, attrs):
@@ -1139,6 +1235,10 @@ class ContractSerializer(serializers.ModelSerializer):
         if bank is not None and float(bank) < 0:
             raise serializers.ValidationError({"total_bank_value": "لا يمكن أن يكون سالبًا."})
         return attrs
+
+    def get_start_order_exists(self, obj):
+        """حساب start_order_exists بناءً على وجود الملف أو التاريخ"""
+        return bool(obj.start_order_file or obj.start_order_date)
 
     def _fill_snapshot(self, contract: Contract):
         try:
@@ -1160,9 +1260,46 @@ class ContractSerializer(serializers.ModelSerializer):
             contract.save(update_fields=["license_snapshot"])
 
     def create(self, validated_data):
-        validated_data.pop("owners", None)  # عرض فقط
+        # ✅ حفظ owners في قاعدة البيانات (قابلة للتحرير)
+        owners_data = validated_data.pop("owners", [])
+        attachments_data = validated_data.pop("attachments", [])
+        extensions_data = validated_data.pop("extensions", [])
+        
         try:
             obj = Contract.objects.create(**validated_data)
+            
+            # ✅ حفظ owners في قاعدة البيانات
+            if owners_data and isinstance(owners_data, list):
+                obj.owners = owners_data
+                obj.save(update_fields=["owners"])
+            
+            # ✅ حفظ extensions في قاعدة البيانات
+            if extensions_data and isinstance(extensions_data, list):
+                obj.extensions = extensions_data
+                obj.save(update_fields=["extensions"])
+            
+            # ✅ حفظ المرفقات
+            if attachments_data and isinstance(attachments_data, list):
+                saved_attachments = []
+                for att in attachments_data:
+                    att_dict = {
+                        "type": att.get("type", "main_contract"),
+                        "date": att.get("date"),
+                        "notes": att.get("notes", ""),
+                        "file_url": None,
+                        "file_name": None,
+                    }
+                    # ✅ إذا كان هناك ملف جديد
+                    if "_file" in att and att["_file"]:
+                        from django.core.files.storage import default_storage
+                        file_obj = att["_file"]
+                        file_path = default_storage.save(f"contracts/attachments/{obj.id}/{file_obj.name}", file_obj)
+                        att_dict["file_url"] = default_storage.url(file_path)
+                        att_dict["file_name"] = file_obj.name
+                    saved_attachments.append(att_dict)
+                obj.attachments = saved_attachments
+                obj.save(update_fields=["attachments"])
+            
             # ✅ محاولة ملء snapshot - إذا فشلت، نكمل بدون snapshot
             try:
                 self._fill_snapshot(obj)
@@ -1178,9 +1315,46 @@ class ContractSerializer(serializers.ModelSerializer):
             raise
 
     def update(self, instance, validated_data):
-        validated_data.pop("owners", None)
+        # ✅ تحديث owners في قاعدة البيانات (قابلة للتحرير)
+        owners_data = validated_data.pop("owners", None)
+        attachments_data = validated_data.pop("attachments", None)
+        extensions_data = validated_data.pop("extensions", None)
+        
         try:
             updated = super().update(instance, validated_data)
+            
+            # ✅ تحديث owners في قاعدة البيانات
+            if owners_data is not None and isinstance(owners_data, list):
+                updated.owners = owners_data
+                updated.save(update_fields=["owners"])
+            
+            # ✅ تحديث extensions في قاعدة البيانات
+            if extensions_data is not None and isinstance(extensions_data, list):
+                updated.extensions = extensions_data
+                updated.save(update_fields=["extensions"])
+            
+            # ✅ تحديث المرفقات إذا كانت موجودة
+            if attachments_data is not None and isinstance(attachments_data, list):
+                saved_attachments = []
+                for att in attachments_data:
+                    att_dict = {
+                        "type": att.get("type", "main_contract"),
+                        "date": att.get("date"),
+                        "notes": att.get("notes", ""),
+                        "file_url": att.get("file_url"),  # الحفاظ على الملف القديم
+                        "file_name": att.get("file_name"),
+                    }
+                    # ✅ إذا كان هناك ملف جديد
+                    if "_file" in att and att["_file"]:
+                        from django.core.files.storage import default_storage
+                        file_obj = att["_file"]
+                        file_path = default_storage.save(f"contracts/attachments/{instance.id}/{file_obj.name}", file_obj)
+                        att_dict["file_url"] = default_storage.url(file_path)
+                        att_dict["file_name"] = file_obj.name
+                    saved_attachments.append(att_dict)
+                updated.attachments = saved_attachments
+                updated.save(update_fields=["attachments"])
+            
             # ✅ محاولة تحديث snapshot - إذا فشلت، نكمل بدون snapshot
             try:
                 self._fill_snapshot(updated)
@@ -1212,3 +1386,67 @@ class AwardingSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = ["project", "created_at", "updated_at"]
+
+
+# =========================
+# Payment
+# =========================
+class PaymentSerializer(serializers.ModelSerializer):
+    project_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Payment
+        fields = [
+            "id", "project",
+            "amount", "date", "description",
+            "project_name",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
+    
+    def get_project_name(self, obj):
+        """الحصول على اسم المشروع - نفس منطق ProjectSerializer.get_display_name"""
+        if not obj or not obj.project:
+            return None
+        
+        try:
+            project = obj.project
+            
+            # ✅ إذا كان project.name موجوداً، نستخدمه أولاً
+            if project.name and project.name.strip():
+                return project.name
+            
+            # ✅ إذا لم يكن هناك اسم محفوظ، نحاول حسابه من الملاك
+            try:
+                sp = project.siteplan
+            except SitePlan.DoesNotExist:
+                sp = None
+
+            main_name = ""
+            owners_count = 0
+            if sp:
+                qs = sp.owners.order_by("id")
+                owners_count = qs.count()
+                for o in qs:
+                    ar = (o.owner_name_ar or "").strip()
+                    en = (o.owner_name_en or "").strip()
+                    if ar or en:
+                        main_name = ar or en
+                        break
+
+            if main_name:
+                return f"{main_name} وشركاؤه" if owners_count > 1 else main_name
+            
+            # ✅ إذا لم يكن هناك اسم ولا ملاك، نستخدم ID
+            project_id = getattr(project, 'id', None)
+            if project_id:
+                return f"مشروع #{project_id}"
+            return "مشروع جديد"
+        except Exception as e:
+            # ✅ في حالة أي خطأ، نرجع اسم بسيط
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting project name in PaymentSerializer: {e}")
+            if obj.project:
+                return obj.project.name or f"Project #{obj.project.id}"
+            return None

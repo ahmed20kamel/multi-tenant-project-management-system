@@ -1,5 +1,5 @@
 // Hook موحد لجلب بيانات المشروع الكاملة (project, siteplan, license, contract)
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { api } from "../services/api";
 
 export default function useProjectData(projectId) {
@@ -9,54 +9,90 @@ export default function useProjectData(projectId) {
     license: null,
     contract: null,
     awarding: null,
+    payments: [],
   });
   const [loading, setLoading] = useState(true);
+  const mountedRef = useRef(true);
 
-  useEffect(() => {
+  // ✅ مساعد لاستخراج البيانات مع التحقق من حالة HTTP
+  const extractData = useCallback((result) => {
+    if (result.status === "fulfilled") {
+      // ✅ axios يعيد response object مباشرة في result.value
+      const response = result.value;
+      // ✅ التحقق من أن الاستجابة ناجحة (status 200-299)
+      if (response && response.status >= 200 && response.status < 300) {
+        const responseData = response.data;
+        if (Array.isArray(responseData)) {
+          return responseData.length > 0 ? responseData[0] : null;
+        }
+        return responseData || null;
+      }
+    }
+    return null;
+  }, []);
+
+  // ✅ دالة تحميل البيانات
+  const loadData = useCallback(async () => {
     if (!projectId) {
       setLoading(false);
       return;
     }
 
-    let mounted = true;
+    mountedRef.current = true;
     setLoading(true);
 
-    Promise.allSettled([
-      api.get(`projects/${projectId}/`),
-      api.get(`projects/${projectId}/siteplan/`),
-      api.get(`projects/${projectId}/license/`),
-      api.get(`projects/${projectId}/contract/`),
-      api.get(`projects/${projectId}/awarding/`),
-    ]).then(([pRes, spRes, lcRes, ctRes, awRes]) => {
-      if (!mounted) return;
+    try {
+      const [pRes, spRes, lcRes, ctRes, awRes, paymentsRes] = await Promise.allSettled([
+        api.get(`projects/${projectId}/`),
+        api.get(`projects/${projectId}/siteplan/`),
+        api.get(`projects/${projectId}/license/`),
+        api.get(`projects/${projectId}/contract/`),
+        api.get(`projects/${projectId}/awarding/`),
+        api.get(`projects/${projectId}/payments/`),
+      ]);
 
-      const project = pRes.status === "fulfilled" ? pRes.value?.data || null : null;
-      
-      const siteplan = spRes.status === "fulfilled" 
-        ? (Array.isArray(spRes.value?.data) ? spRes.value.data[0] : spRes.value?.data || null)
-        : null;
-      
-      const license = lcRes.status === "fulfilled"
-        ? (Array.isArray(lcRes.value?.data) ? lcRes.value.data[0] : lcRes.value?.data || null)
-        : null;
-      
-      const contract = ctRes.status === "fulfilled"
-        ? (Array.isArray(ctRes.value?.data) ? ctRes.value.data[0] : ctRes.value?.data || null)
-        : null;
+      if (!mountedRef.current) return;
 
-      const awarding = awRes.status === "fulfilled"
-        ? (Array.isArray(awRes.value?.data) ? awRes.value.data[0] : awRes.value?.data || null)
-        : null;
+      const project = extractData(pRes);
+      const siteplan = extractData(spRes);
+      const license = extractData(lcRes);
+      const contract = extractData(ctRes);
+      const awarding = extractData(awRes);
+      
+      // ✅ معالجة الدفعات بشكل آمن - إذا فشل الطلب، نستخدم قائمة فارغة
+      let paymentsData = [];
+      if (paymentsRes.status === "fulfilled") {
+        const response = paymentsRes.value;
+        if (response && response.status >= 200 && response.status < 300) {
+          const responseData = response.data;
+          if (Array.isArray(responseData)) {
+            paymentsData = responseData;
+          } else if (responseData && Array.isArray(responseData.results)) {
+            paymentsData = responseData.results;
+          }
+        }
+      } else {
+        // ✅ إذا فشل الطلب (مثل 500 error)، نستخدم قائمة فارغة بدلاً من إيقاف التحميل
+        console.warn("Failed to load payments:", paymentsRes.reason);
+      }
 
-      setData({ project, siteplan, license, contract, awarding });
+      setData({ project, siteplan, license, contract, awarding, payments: paymentsData });
       setLoading(false);
-    });
+    } catch (error) {
+      if (!mountedRef.current) return;
+      console.error("Error loading project data:", error);
+      setLoading(false);
+    }
+  }, [projectId, extractData]);
+
+  useEffect(() => {
+    loadData();
 
     return () => {
-      mounted = false;
+      mountedRef.current = false;
     };
-  }, [projectId]);
+  }, [loadData]);
 
-  return { ...data, loading };
+  return { ...data, loading, reload: loadData };
 }
 

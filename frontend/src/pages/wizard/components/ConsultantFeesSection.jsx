@@ -30,28 +30,30 @@ export default function ConsultantFeesSection({
 
   if (isView) {
     return (
-      <div className="form-grid cols-3">
+      <div className="form-grid cols-1" style={{ gap: "var(--space-4)" }}>
         <ViewRow
           label={t("contract.fees.include_consultant")}
           value={includesConsultant === "yes" ? t("yes") : t("no")}
         />
         {showFees && (
           <>
-            <ViewRow
-              label={t("contract.fees.design_percent")}
-              value={form[`${prefix}_fee_design_percent`]}
-            />
-            <ViewRow
-              label={t("contract.fees.supervision_percent")}
-              value={form[`${prefix}_fee_supervision_percent`]}
-            />
+            <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
+              <ViewRow
+                label={t("contract.fees.design_percent")}
+                value={form[`${prefix}_fee_design_percent`] || "0.00"}
+              />
+              <ViewRow
+                label={t("contract.fees.supervision_percent")}
+                value={form[`${prefix}_fee_supervision_percent`] || "0.00"}
+              />
+            </div>
             <ViewRow
               label={t("contract.fees.extra_type")}
               value={EXTRA_FEE_MODE.find(m => m.value === form[`${prefix}_fee_extra_mode`])?.label || form[`${prefix}_fee_extra_mode`]}
             />
             <ViewRow
               label={t("contract.fees.extra_value")}
-              value={form[`${prefix}_fee_extra_value`]}
+              value={form[`${prefix}_fee_extra_value`] || "0.00"}
             />
           </>
         )}
@@ -60,7 +62,7 @@ export default function ConsultantFeesSection({
   }
 
   return (
-    <div className="form-grid cols-3">
+    <div className="form-grid cols-1" style={{ gap: "var(--space-4)" }}>
       <Field label={t("contract.fees.include_consultant")}>
         <YesNoChips
           value={includesConsultant}
@@ -70,26 +72,32 @@ export default function ConsultantFeesSection({
 
       {showFees && (
         <>
-          <Field label={t("contract.fees.design_percent")}>
-            <input
-              className="input"
-              type="number"
-              min="0"
-              max="100"
-              value={form[`${prefix}_fee_design_percent`]}
-              onChange={(e) => setF(`${prefix}_fee_design_percent`, e.target.value)}
-            />
-          </Field>
-          <Field label={t("contract.fees.supervision_percent")}>
-            <input
-              className="input"
-              type="number"
-              min="0"
-              max="100"
-              value={form[`${prefix}_fee_supervision_percent`]}
-              onChange={(e) => setF(`${prefix}_fee_supervision_percent`, e.target.value)}
-            />
-          </Field>
+          <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
+            <Field label={t("contract.fees.design_percent")}>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={form[`${prefix}_fee_design_percent`] || ""}
+                onChange={(e) => setF(`${prefix}_fee_design_percent`, e.target.value)}
+                placeholder="0.00"
+              />
+            </Field>
+            <Field label={t("contract.fees.supervision_percent")}>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={form[`${prefix}_fee_supervision_percent`] || ""}
+                onChange={(e) => setF(`${prefix}_fee_supervision_percent`, e.target.value)}
+                placeholder="0.00"
+              />
+            </Field>
+          </div>
           <Field label={t("contract.fees.extra_type")}>
             <RtlSelect
               className="rtl-select"

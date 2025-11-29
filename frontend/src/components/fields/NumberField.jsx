@@ -1,7 +1,7 @@
 import React, { useRef } from "react";
 import { numberToArabicWords } from "../../utils/numberFormatting";
 
-export default function NumberField({ value, onChange, placeholder = "0.00" }) {
+export default function NumberField({ value, onChange, placeholder = "0.00", readOnly = false, style = {}, dir, min, ...props }) {
 
   const inputRef = useRef(null);
 
@@ -11,6 +11,8 @@ export default function NumberField({ value, onChange, placeholder = "0.00" }) {
   };
 
   const handleChange = (e) => {
+    if (readOnly) return;
+    
     const element = inputRef.current;
 
     // موقع المؤشر قبل التعديل
@@ -46,6 +48,11 @@ export default function NumberField({ value, onChange, placeholder = "0.00" }) {
         value={value}
         placeholder={placeholder}
         onChange={handleChange}
+        readOnly={readOnly}
+        style={style}
+        dir={dir}
+        min={min}
+        {...props}
       />
 
       {/* 🔵 النص العربي (Preview) */}

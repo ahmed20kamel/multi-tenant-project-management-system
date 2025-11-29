@@ -6,6 +6,7 @@ from .views import (
     BuildingLicenseViewSet,
     ContractViewSet,
     AwardingViewSet,
+    PaymentViewSet,
 )
 
 # Projects
@@ -38,6 +39,12 @@ awarding_detail = AwardingViewSet.as_view(
     {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
 )
 
+# Payment ⬇️
+payment_list = PaymentViewSet.as_view({"get": "list", "post": "create"})
+payment_detail = PaymentViewSet.as_view(
+    {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
+)
+
 urlpatterns = [
     path("projects/", project_list, name="project-list"),
     path("projects/<int:pk>/", project_detail, name="project-detail"),
@@ -55,4 +62,10 @@ urlpatterns = [
     # ✅ Awarding endpoints
     path("projects/<int:project_pk>/awarding/", awarding_list, name="awarding-list"),
     path("projects/<int:project_pk>/awarding/<int:pk>/", awarding_detail, name="awarding-detail"),
+    
+    # ✅ Payment endpoints
+    path("payments/", payment_list, name="payment-list"),
+    path("payments/<int:pk>/", payment_detail, name="payment-detail"),
+    path("projects/<int:project_pk>/payments/", payment_list, name="project-payment-list"),
+    path("projects/<int:project_pk>/payments/<int:pk>/", payment_detail, name="project-payment-detail"),
 ]

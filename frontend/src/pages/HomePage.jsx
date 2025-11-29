@@ -615,35 +615,9 @@ export default function HomePage() {
     }
   }
 
-  async function createProject() {
-    try {
-      setLoading(true);
-      setErrorMsg("");
-      const payload = { status: "draft" };
-      const res = await api.post("projects/", payload);
-      const id = res?.data?.id;
-
-      if (id) {
-        navigate(`/projects/${id}/wizard`);
-        return;
-      }
-
-      const list = await api.get("projects/");
-      const latestId = Array.isArray(list.data) && list.data.length ? list.data[0].id : null;
-
-      if (latestId) {
-        navigate(`/projects/${latestId}/wizard`);
-      } else {
-        setErrorMsg(t("homepage_created_but_unknown"));
-      }
-    } catch (err) {
-      const msg = err?.response?.data
-        ? JSON.stringify(err.response.data, null, 2)
-        : err.message || t("unknown_error");
-      setErrorMsg(`${t("homepage_error_creating_project")}: ${msg}`);
-    } finally {
-      setLoading(false);
-    }
+  function createProject() {
+    // ✅ الانتقال مباشرة إلى الويزارد بدون إنشاء مشروع
+    navigate("/wizard/new");
   }
 
   // إجماليات مبالغ المقاولات (تجميع سريع من صفوف المشاريع)
@@ -884,12 +858,9 @@ export default function HomePage() {
           <div className="header-actions">
             <Button 
               onClick={createProject} 
-              disabled={loading}
               className="primary-btn"
             >
-              {loading
-                ? isAR ? "جاري الإنشاء..." : "Creating..."
-                : isAR ? "مشروع جديد" : "New Project"}
+              {isAR ? "مشروع جديد" : "New Project"}
             </Button>
           </div>
         </header>

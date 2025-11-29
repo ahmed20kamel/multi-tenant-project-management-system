@@ -26,6 +26,7 @@ const INITIAL_FORM = {
   project_no: "",
   project_name: "",
   developer_name: "",
+  source_of_project: "",
   notes: "",
 };
 
@@ -41,6 +42,31 @@ export default function useSitePlan(projectId, setup) {
   const [lock, setLock] = useState(false);
 
   const setF = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  // ✅ إعادة تعيين القيم عند فتح مشروع جديد (projectId = null)
+  useEffect(() => {
+    if (!projectId) {
+      // مشروع جديد - إعادة تعيين كل القيم إلى الافتراضية تماماً
+      setForm({
+        ...INITIAL_FORM,
+        land_use: setup?.projectType === "commercial" ? "Investment" : "Residential",
+      });
+      setOwners([{ ...EMPTY_OWNER }]);
+      setExistingId(null);
+      setIsView(false);
+      setLock(false);
+    }
+  }, [projectId]); // ✅ فقط projectId
+
+  // ✅ تحديث land_use عند تغيير projectType في مشروع جديد
+  useEffect(() => {
+    if (!projectId && setup?.projectType) {
+      setForm((prev) => ({
+        ...prev,
+        land_use: setup.projectType === "commercial" ? "Investment" : "Residential",
+      }));
+    }
+  }, [projectId, setup?.projectType]);
 
   // تحميل البيانات من الباك
   useEffect(() => {

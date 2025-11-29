@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, Link, useSearchParams } from "react-router-dom";
+import { useParams, Link, useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { FaCheck } from "react-icons/fa";
 import { api } from "../../services/api";
@@ -22,9 +22,14 @@ export default function WizardPage() {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const isAR = /^ar\b/i.test(lang || "");
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const { projectId } = useParams();
   const [params] = useSearchParams();
+
+  // ✅ تحديد إذا كان هذا مشروع جديد (بدون projectId)
+  const isNewProject = !projectId || location.pathname === "/wizard/new";
 
   const mode = (params.get("mode") || "edit").toLowerCase();
   const isView = mode === "view";
@@ -36,10 +41,60 @@ export default function WizardPage() {
   const [contract, setContract] = useState(null);
   const [index, setIndex] = useState(0);
   
-  // ✅ جلب بيانات المشروع للتحقق من المراحل المكتملة
-  const { siteplan, license, contract: contractData, awarding } = useProjectData(projectId);
+  // ✅ حالة إنشاء المشروع
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  
+  // ✅ إعادة تعيين index إلى 0 عند فتح مشروع جديد
+  useEffect(() => {
+    if (isNewProject) {
+      setIndex(0);
+    }
+  }, [isNewProject]);
+  
+  // ✅ جلب بيانات المشروع للتحقق من المراحل المكتملة (فقط إذا كان projectId موجود)
+  const projectData = useProjectData(isNewProject ? null : projectId);
+  const { siteplan, license, contract: contractData, awarding, reload } = projectData;
+
+  // ✅ الاستماع لأحداث تحديث البيانات وإعادة تحميلها بدون reload
+  useEffect(() => {
+    if (isNewProject || !projectId || !reload) return;
+    
+    const handleDataUpdate = (event) => {
+      if (event.detail?.projectId === projectId) {
+        // ✅ إعادة تحميل البيانات فقط بدون reload للصفحة
+        reload();
+      }
+    };
+    
+    // ✅ الاستماع لجميع أحداث التحديث
+    window.addEventListener("license-updated", handleDataUpdate);
+    window.addEventListener("contract-updated", handleDataUpdate);
+    window.addEventListener("awarding-updated", handleDataUpdate);
+    window.addEventListener("siteplan-owners-updated", handleDataUpdate);
+    
+    return () => {
+      window.removeEventListener("license-updated", handleDataUpdate);
+      window.removeEventListener("contract-updated", handleDataUpdate);
+      window.removeEventListener("awarding-updated", handleDataUpdate);
+      window.removeEventListener("siteplan-owners-updated", handleDataUpdate);
+    };
+  }, [projectId, isNewProject, reload]);
 
   useEffect(() => {
+    if (isNewProject) {
+      // ✅ مشروع جديد - مسح البيانات القديمة وإعادة تعيين القيم الافتراضية
+      setSetup({
+        projectType: "",
+        villaCategory: "",
+        contractType: "",
+        internalCode: "",
+      });
+      // مسح localStorage للويزارد
+      try {
+        localStorage.removeItem("wizard_setup_state_v1");
+      } catch {}
+      return;
+    }
     if (!projectId) return;
     (async () => {
       try {
@@ -53,7 +108,7 @@ export default function WizardPage() {
         });
       } catch {}
     })();
-  }, [projectId, setSetup]);
+  }, [projectId, setSetup, isNewProject]);
 
   const setupHasAllSelections = (s = setup) =>
     !!s.projectType && (s.projectType !== "villa" || !!s.villaCategory) && !!s.contractType;
@@ -65,7 +120,7 @@ export default function WizardPage() {
 
   // تحميل بيانات العقد لتحديد نوع التمويل
   useEffect(() => {
-    if (!projectId || !allowSitePlanFlow) return;
+    if (isNewProject || !projectId || !allowSitePlanFlow) return;
     let mounted = true;
     (async () => {
       try {
@@ -76,7 +131,7 @@ export default function WizardPage() {
       } catch {}
     })();
     return () => { mounted = false; };
-  }, [projectId, allowSitePlanFlow]);
+  }, [projectId, allowSitePlanFlow, isNewProject]);
 
   const labels = {
     setup: t("wizard_step_setup"),
@@ -143,20 +198,88 @@ export default function WizardPage() {
     if (canEnter(i)) setIndex(i);
   };
 
+  // ✅ دالة إنشاء المشروع بعد إتمام المرحلتين الأولى والثانية
+  const createProjectAndSaveData = async (setupData, sitePlanData) => {
+    try {
+      setIsCreatingProject(true);
+      
+      // 1. إنشاء المشروع الأساسي
+      const projectPayload = {
+        status: "draft",
+        project_type: setupData.projectType || null,
+        villa_category: setupData.projectType === "villa" ? (setupData.villaCategory || null) : null,
+        contract_type: setupData.contractType || null,
+        internal_code: setupData.internalCode || null,
+      };
+      
+      const projectRes = await api.post("projects/", projectPayload);
+      const newProjectId = projectRes?.data?.id;
+      
+      if (!newProjectId) {
+        throw new Error("Failed to create project");
+      }
+      
+      // 2. حفظ بيانات مخطط الأرض
+      if (sitePlanData) {
+        const sitePlanPayload = sitePlanData; // FormData
+        const config = sitePlanPayload instanceof FormData 
+          ? {
+              headers: { "Content-Type": "multipart/form-data" },
+              onUploadProgress: (progressEvent) => {
+                if (progressEvent.total) {
+                  const percentCompleted = Math.round(
+                    (progressEvent.loaded * 100) / progressEvent.total
+                  );
+                  // يمكن إضافة progress indicator هنا إذا لزم الأمر
+                }
+              },
+            }
+          : { headers: { "Content-Type": "application/json" } };
+        
+        await api.post(`projects/${newProjectId}/siteplan/`, sitePlanPayload, config);
+      }
+      
+      // 3. الانتقال إلى صفحة الويزارد بالمشروع الجديد
+      navigate(`/projects/${newProjectId}/wizard?step=license`);
+      
+    } catch (err) {
+      console.error("Error creating project:", err);
+      const msg = err?.response?.data
+        ? JSON.stringify(err.response.data, null, 2)
+        : err.message || t("unknown_error");
+      alert(`${t("homepage_error_creating_project")}: ${msg}`);
+      throw err; // إعادة throw للسماح لـ SitePlanStep بمعالجة الخطأ
+    } finally {
+      setIsCreatingProject(false);
+    }
+  };
+
   // ✅ تحديد المراحل المكتملة
   const isStepCompleted = (stepId) => {
+    if (isNewProject) {
+      // للمشروع الجديد، نستخدم البيانات المؤقتة
+      switch (stepId) {
+        case "setup":
+          return setupHasAllSelections();
+        case "siteplan":
+          return false;
+        default:
+          return false;
+      }
+    }
+    
+    // للمشروع الموجود، نستخدم البيانات من DB
     switch (stepId) {
       case "setup":
-        // Setup مكتمل إذا كان هناك project_type و contract_type
         return setupHasAllSelections();
       case "siteplan":
-        return !!siteplan;
+        return !!siteplan && siteplan.id;  // ✅ التحقق من وجود id
       case "license":
-        return !!license;
+        return !!license && license.id;  // ✅ التحقق من وجود id
       case "contract":
-        return !!contractData;
+        return !!contractData && contractData.id;  // ✅ التحقق من وجود id
       case "award":
-        return !!awarding;
+        return !!awarding && awarding.id;  // ✅ التحقق من وجود id
       default:
         return false;
     }
@@ -164,16 +287,41 @@ export default function WizardPage() {
 
   const Current = STEPS[index].Component;
 
+  // ✅ إظهار loading overlay أثناء إنشاء المشروع
+  if (isCreatingProject) {
+    return (
+      <div className="container">
+        <div className="card" style={{ textAlign: "center", padding: "var(--space-8)" }}>
+          <div style={{ fontSize: "var(--fs-24)", marginBottom: "var(--space-4)" }}>
+            {isAR ? "جاري إنشاء المشروع..." : "Creating project..."}
+          </div>
+          <div style={{ color: "var(--muted)" }}>
+            {isAR ? "يرجى الانتظار..." : "Please wait..."}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container">
       <div className="card">
         <div className="row row--space-between row--align-center">
           <div className="mini">
-            {project?.name ? `${labels.projectPrefix}: ${project.name}` : null}
+            {isNewProject 
+              ? (isAR ? "مشروع جديد" : "New Project")
+              : (project?.name ? `${labels.projectPrefix}: ${project.name}` : null)}
           </div>
-          <Button as={Link} variant="secondary" to={`/projects/${projectId}`}>
-            {labels.projectPrefix} ←
-          </Button>
+          {!isNewProject && projectId && (
+            <Button as={Link} variant="secondary" to={`/projects/${projectId}`}>
+              {labels.projectPrefix} ←
+            </Button>
+          )}
+          {isNewProject && (
+            <Button as={Link} variant="secondary" to="/projects">
+              {labels.home} ←
+            </Button>
+          )}
         </div>
 
         {/* Stepper */}
@@ -222,11 +370,22 @@ export default function WizardPage() {
             if (!isView && allowSitePlanFlow && setupHasAllSelections()) goNext();
           }}
           isView={isView}
+          isNewProject={isNewProject}
         />
       )}
 
       {allowSitePlanFlow && index === 1 && (
-        <Current projectId={projectId} setup={setup} onPrev={goPrev} onNext={goNext} isView={isView} />
+        <Current 
+          projectId={isNewProject ? null : projectId} 
+          setup={setup} 
+          onPrev={goPrev} 
+          onNext={isNewProject ? undefined : goNext}
+          isView={isView}
+          isNewProject={isNewProject}
+          onCreateProject={(sitePlanData) => {
+            createProjectAndSaveData(setup, sitePlanData);
+          }}
+        />
       )}
       {allowSitePlanFlow && index === 2 && (
         <Current projectId={projectId} onPrev={goPrev} onNext={goNext} isView={isView} />
