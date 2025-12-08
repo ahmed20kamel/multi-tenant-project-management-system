@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "../contexts/AuthContext";
+import { useTheme } from "../hooks/useTheme";
 import { api } from "../services/api";
-import Button from "../components/Button";
-import Dialog from "../components/Dialog";
-import PageLayout from "../components/PageLayout";
+import Button from "../components/common/Button";
+import Dialog from "../components/common/Dialog";
+import PageLayout from "../components/layout/PageLayout";
 import { computeContractSummary, withVatTotal } from "../utils/contractFinancial";
 import "./homepage.css";
 // مكونات مساعدة للتصميم
@@ -257,8 +259,32 @@ const BarChart = ({ data, labels, title, color = "var(--primary)" }) => {
 export default function HomePage() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
+  const { user } = useAuth();
+  const { theme } = useTheme();
   const isAR = /^ar\b/i.test(i18n.language || "");
+  const isDark = theme === 'dark';
   const [loading, setLoading] = useState(false);
+  
+  // إعادة توجيه بناءً على نوع المستخدم
+  useEffect(() => {
+    if (user) {
+      if (user.is_superuser) {
+        navigate('/admin/dashboard', { replace: true });
+        return;
+      }
+      
+      // التحقق من أن المستخدم هو Company Super Admin
+      const isCompanySuperAdmin = user.role?.name === 'company_super_admin';
+      
+      // فقط Company Super Admin الذي لم يكمل Onboarding يتم توجيهه لصفحة Onboarding
+      if (isCompanySuperAdmin && !user.onboarding_completed) {
+        navigate('/onboarding', { replace: true });
+        return;
+      }
+      
+      // جميع المستخدمين الآخرين (بما فيهم Company Super Admin الذي أكمل Onboarding) يبقون في Dashboard
+    }
+  }, [user, navigate]);
   const [errorMsg, setErrorMsg] = useState("");
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState("");
@@ -266,14 +292,13 @@ export default function HomePage() {
   const [projectRows, setProjectRows] = useState([]);
   const [ownerRows, setOwnerRows] = useState([]);
   const [consultantRows, setConsultantRows] = useState([]);
-  const [contractorRows, setContractorRows] = useState([]);
+  // ✅ تم إزالة contractorRows - المقاول = الشركة نفسها
   const [projectFinancialRows, setProjectFinancialRows] = useState([]);
   const [showVat, setShowVat] = useState(true); // حالة للتبديل بين مع وبدون ضريبة
   const [metrics, setMetrics] = useState({
     totalProjects: 0,
     totalOwners: 0,
     totalConsultants: 0,
-    totalContractors: 0,
     withSiteplan: 0,
     withLicense: 0,
     withContract: 0,
@@ -308,7 +333,7 @@ export default function HomePage() {
 
       const ownersMap = new Map();
       const consultantsMap = new Map();
-      const contractorsMap = new Map();
+      // ✅ تم إزالة contractorsMap - المقاول = الشركة نفسها
 
       let withSiteplan = 0;
       let withLicense = 0;
@@ -475,37 +500,7 @@ export default function HomePage() {
             }
           }
 
-          // ===== المقاولون (Contractors) =====
-          const contractorName =
-            licenseData?.contractor_name || contractData?.contractor_name;
-          if (contractorName) {
-            const key = contractorName.toLowerCase().trim();
-            if (!contractorsMap.has(key)) {
-              contractorsMap.set(key, {
-                name: contractorName,
-                licenseNo:
-                  licenseData?.contractor_license_no ||
-                  contractData?.contractor_license_no ||
-                  "",
-                tradeLicense: contractData?.contractor_trade_license || "",
-                projects: [],
-              });
-            }
-            const entry = contractorsMap.get(key);
-            if (
-              entry &&
-              !entry.projects.some((pr) => pr.id === projectId)
-            ) {
-              entry.projects.push({
-                id: projectId,
-                name:
-                  p?.display_name ||
-                  p?.name ||
-                  `Project #${projectId}`,
-                internalCode: p?.internal_code || null,
-              });
-            }
-          }
+          // ✅ تم إزالة منطق المقاولين - المقاول = الشركة نفسها (بيانات ثابتة من TenantSettings)
 
           // ===== ملخص العقد المالي =====
           if (contractData) {
@@ -577,13 +572,12 @@ export default function HomePage() {
 
       const ownersArray = Array.from(ownersMap.values());
       const consultantsArray = Array.from(consultantsMap.values());
-      const contractorsArray = Array.from(contractorsMap.values());
+      // ✅ تم إزالة contractorsArray - المقاول = الشركة نفسها
 
       setMetrics({
         totalProjects: safeProjects.length,
         totalOwners: ownersArray.length,
         totalConsultants: consultantsArray.length,
-        totalContractors: contractorsArray.length,
         withSiteplan,
         withLicense,
         withContract,
@@ -602,7 +596,7 @@ export default function HomePage() {
       setProjectRows(projectRowsLocal);
       setOwnerRows(ownersArray);
       setConsultantRows(consultantsArray);
-      setContractorRows(contractorsArray);
+      // ✅ تم إزالة setContractorRows - المقاول = الشركة نفسها
       setProjectFinancialRows(financialRows);
     } catch (err) {
       const msg =
@@ -718,41 +712,7 @@ export default function HomePage() {
     }
   ];
 
-  const contractorColumns = [
-    { 
-      key: "index", 
-      header: "#", 
-      width: "60px",
-      render: (_, index) => <div className="index-cell">{index + 1}</div>
-    },
-    { 
-      key: "name", 
-      header: "اسم المقاول",
-      render: (row) => (
-        <div 
-          className="clickable-name" 
-          onClick={() => navigate(`/contractors/${encodeURIComponent(row.name)}`, { state: { contractorData: row } })}
-        >
-          {row.name}
-        </div>
-      )
-    },
-    { 
-      key: "licenseNo", 
-      header: "الرخصة",
-      className: "code-cell",
-      render: (row) => row.licenseNo || <span className="muted">—</span>
-    },
-    { 
-      key: "projects", 
-      header: "المشاريع",
-      render: (row) => (
-        <div className="project-count">
-          <span className="count-badge">{Array.isArray(row.projects) ? row.projects.length : 0}</span>
-        </div>
-      )
-    }
-  ];
+  // ✅ تم إزالة contractorColumns - المقاول = الشركة نفسها (بيانات ثابتة من إعدادات الشركة)
 
   const financialColumns = [
     { 
@@ -831,7 +791,7 @@ export default function HomePage() {
 
   return (
     <PageLayout loading={statsLoading} loadingText={t("loading_projects")}>
-      <div className={`modern-dashboard ${isAR ? "rtl" : "ltr"}`}>
+      <div className={`modern-dashboard ${isAR ? "rtl" : "ltr"} ${isDark ? "dark" : "light"}`}>
         <Dialog
           open={!!errorMsg}
           title={t("error")}
@@ -900,13 +860,6 @@ export default function HomePage() {
               subtitle={isAR ? "استشاري" : "Consultant"}
               icon="🏢"
               color="accent"
-            />
-            <StatCard
-              title={isAR ? "المقاولون" : "Contractors"}
-              value={metrics.totalContractors.toLocaleString()}
-              subtitle={isAR ? "مقاول" : "Contractor"}
-              icon="👷"
-              color="neutral"
             />
           </div>
         </section>
@@ -1049,16 +1002,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="section-header financial-details-header">
-            <h2>
-              {isAR ? "التفاصيل المالية للمشاريع" : "Project Financial Details"}
-            </h2>
-            <div className="vat-indicator">
-              {showVat
-                ? (isAR ? "شامل ضريبة 5%" : "Including 5% VAT")
-                : (isAR ? "بدون ضريبة" : "Without VAT")}
-            </div>
-          </div>
           <div className="financial-details-table">
             <DataTable
               columns={financialColumns}
@@ -1069,16 +1012,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* المقاولين */}
-        <section className="contractors-section">
-          <DataTable
-            title={isAR ? "المقاولين" : "Contractors"}
-            columns={contractorColumns}
-            data={contractorRows}
-            emptyMessage="لا توجد بيانات مقاولين"
-            isAR={isAR}
-          />
-        </section>
+        {/* ✅ تم إزالة قسم المقاولين - المقاول = الشركة نفسها (بيانات ثابتة من إعدادات الشركة) */}
 
       </div>
 

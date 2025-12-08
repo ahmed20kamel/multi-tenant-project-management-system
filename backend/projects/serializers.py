@@ -1,9 +1,17 @@
 import re
 import json
+from django.db import models
 from rest_framework import serializers
 from .models import (
-    Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment
+    Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment,
+    Variation, InitialInvoice, ActualInvoice
 )
+
+# Import WorkflowStage for serializer
+try:
+    from authentication.models import WorkflowStage
+except ImportError:
+    WorkflowStage = None
 
 # =========================
 # Helpers (snapshots)
@@ -122,6 +130,20 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     # اسم عرض مشتق من الملاك
     display_name = serializers.SerializerMethodField()
+    
+    # Workflow fields
+    current_stage = serializers.SerializerMethodField()
+    current_stage_id = serializers.PrimaryKeyRelatedField(
+        queryset=WorkflowStage.objects.filter(is_active=True) if WorkflowStage else None,
+        source='current_stage',
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    approval_status = serializers.CharField(read_only=True)
+    delete_requested_by = serializers.SerializerMethodField()
+    delete_approved_by = serializers.SerializerMethodField()
+    last_approved_by = serializers.SerializerMethodField()
 
     class Meta:
         model  = Project
@@ -131,8 +153,55 @@ class ProjectSerializer(serializers.ModelSerializer):
             "project_type", "villa_category", "contract_type",
             "status", "has_siteplan", "has_license", "completion",
             "internal_code",
+            "current_stage", "current_stage_id", "approval_status",
+            "delete_requested_by", "delete_requested_at", "delete_reason",
+            "delete_approved_by", "delete_approved_at",
+            "last_approved_by", "last_approved_at", "approval_notes",
             "created_at", "updated_at",
         ]
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # تعيين queryset للـ current_stage_id
+        if WorkflowStage and 'current_stage_id' in self.fields:
+            self.fields['current_stage_id'].queryset = WorkflowStage.objects.filter(is_active=True)
+    
+    def get_current_stage(self, obj):
+        if obj.current_stage:
+            return {
+                'id': obj.current_stage.id,
+                'code': obj.current_stage.code,
+                'name': obj.current_stage.name,
+                'name_en': obj.current_stage.name_en,
+            }
+        return None
+    
+    def get_delete_requested_by(self, obj):
+        if obj.delete_requested_by:
+            return {
+                'id': obj.delete_requested_by.id,
+                'email': obj.delete_requested_by.email,
+                'full_name': obj.delete_requested_by.get_full_name(),
+            }
+        return None
+    
+    def get_delete_approved_by(self, obj):
+        if obj.delete_approved_by:
+            return {
+                'id': obj.delete_approved_by.id,
+                'email': obj.delete_approved_by.email,
+                'full_name': obj.delete_approved_by.get_full_name(),
+            }
+        return None
+    
+    def get_last_approved_by(self, obj):
+        if obj.last_approved_by:
+            return {
+                'id': obj.last_approved_by.id,
+                'email': obj.last_approved_by.email,
+                'full_name': obj.last_approved_by.get_full_name(),
+            }
+        return None
         extra_kwargs = {
             "name": {"required": False, "allow_blank": True},
             "project_type": {"required": False},
@@ -829,6 +898,33 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
                 result.append({"ar": ar, "en": en})
         return result
 
+    def to_representation(self, instance):
+        """ملء بيانات المقاول من TenantSettings عند القراءة دائماً (Single Source of Truth)"""
+        representation = super().to_representation(instance)
+        
+        # ✅ ملء بيانات المقاول من TenantSettings دائماً (Single Source of Truth)
+        project = instance.project
+        if project and project.tenant:
+            try:
+                from authentication.models import TenantSettings
+                tenant_settings = TenantSettings.objects.get(tenant=project.tenant)
+                
+                # ✅ نستخدم بيانات TenantSettings دائماً لضمان التحديث التلقائي
+                if tenant_settings.contractor_name:
+                    representation['contractor_name'] = tenant_settings.contractor_name
+                if tenant_settings.contractor_name_en:
+                    representation['contractor_name_en'] = tenant_settings.contractor_name_en
+                if tenant_settings.contractor_license_no:
+                    representation['contractor_license_no'] = tenant_settings.contractor_license_no
+                if tenant_settings.contractor_phone:
+                    representation['contractor_phone'] = tenant_settings.contractor_phone
+                if tenant_settings.contractor_email:
+                    representation['contractor_email'] = tenant_settings.contractor_email
+            except TenantSettings.DoesNotExist:
+                pass  # إذا لم تكن هناك إعدادات، نكمل بدون ملء البيانات
+        
+        return representation
+
     def to_internal_value(self, data):
         """دعم owners كسلسلة JSON في multipart: owners='[{"owner_name_ar":"..."}, ...]'"""
         ret = super().to_internal_value(data)
@@ -850,6 +946,26 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        # ✅ ملء بيانات المقاول من TenantSettings تلقائياً إذا لم تكن موجودة
+        project = validated_data.get('project')
+        if project and project.tenant:
+            try:
+                from authentication.models import TenantSettings
+                tenant_settings = TenantSettings.objects.get(tenant=project.tenant)
+                # ✅ ملء بيانات المقاول من TenantSettings إذا كانت فارغة
+                if not validated_data.get('contractor_name') and tenant_settings.contractor_name:
+                    validated_data['contractor_name'] = tenant_settings.contractor_name
+                if not validated_data.get('contractor_name_en') and tenant_settings.contractor_name_en:
+                    validated_data['contractor_name_en'] = tenant_settings.contractor_name_en
+                if not validated_data.get('contractor_license_no') and tenant_settings.contractor_license_no:
+                    validated_data['contractor_license_no'] = tenant_settings.contractor_license_no
+                if not validated_data.get('contractor_phone') and tenant_settings.contractor_phone:
+                    validated_data['contractor_phone'] = tenant_settings.contractor_phone
+                if not validated_data.get('contractor_email') and tenant_settings.contractor_email:
+                    validated_data['contractor_email'] = tenant_settings.contractor_email
+            except TenantSettings.DoesNotExist:
+                pass  # إذا لم تكن هناك إعدادات، نكمل بدون ملء البيانات
+        
         lic = BuildingLicense.objects.create(**validated_data)
         try:
             sp = lic.project.siteplan
@@ -861,6 +977,27 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
         return lic
 
     def update(self, instance, validated_data):
+        # ✅ ملء بيانات المقاول من TenantSettings تلقائياً إذا لم تكن موجودة أو تم تحديثها
+        project = instance.project
+        if project and project.tenant:
+            try:
+                from authentication.models import TenantSettings
+                tenant_settings = TenantSettings.objects.get(tenant=project.tenant)
+                # ✅ ملء بيانات المقاول من TenantSettings إذا كانت فارغة
+                # ✅ نستخدم بيانات TenantSettings دائماً لضمان التحديث التلقائي
+                if tenant_settings.contractor_name:
+                    validated_data['contractor_name'] = tenant_settings.contractor_name
+                if tenant_settings.contractor_name_en:
+                    validated_data['contractor_name_en'] = tenant_settings.contractor_name_en
+                if tenant_settings.contractor_license_no:
+                    validated_data['contractor_license_no'] = tenant_settings.contractor_license_no
+                if tenant_settings.contractor_phone:
+                    validated_data['contractor_phone'] = tenant_settings.contractor_phone
+                if tenant_settings.contractor_email:
+                    validated_data['contractor_email'] = tenant_settings.contractor_email
+            except TenantSettings.DoesNotExist:
+                pass  # إذا لم تكن هناك إعدادات، نكمل بدون ملء البيانات
+        
         # ✅ استعادة الملاك من حقل owners إلى Site Plan إذا لم تكن موجودة
         owners_data = validated_data.get("owners")
         if owners_data and isinstance(owners_data, list) and len(owners_data) > 0:
@@ -1240,6 +1377,33 @@ class ContractSerializer(serializers.ModelSerializer):
         """حساب start_order_exists بناءً على وجود الملف أو التاريخ"""
         return bool(obj.start_order_file or obj.start_order_date)
 
+    def to_representation(self, instance):
+        """ملء بيانات المقاول من TenantSettings عند القراءة دائماً (Single Source of Truth)"""
+        representation = super().to_representation(instance)
+        
+        # ✅ ملء بيانات المقاول من TenantSettings دائماً (Single Source of Truth)
+        project = instance.project
+        if project and project.tenant:
+            try:
+                from authentication.models import TenantSettings
+                tenant_settings = TenantSettings.objects.get(tenant=project.tenant)
+                
+                # ✅ نستخدم بيانات TenantSettings دائماً لضمان التحديث التلقائي
+                if tenant_settings.contractor_name:
+                    representation['contractor_name'] = tenant_settings.contractor_name
+                if tenant_settings.contractor_name_en:
+                    representation['contractor_name_en'] = tenant_settings.contractor_name_en
+                if tenant_settings.contractor_license_no:
+                    representation['contractor_trade_license'] = tenant_settings.contractor_license_no
+                if tenant_settings.contractor_phone:
+                    representation['contractor_phone'] = tenant_settings.contractor_phone
+                if tenant_settings.contractor_email:
+                    representation['contractor_email'] = tenant_settings.contractor_email
+            except TenantSettings.DoesNotExist:
+                pass  # إذا لم تكن هناك إعدادات، نكمل بدون ملء البيانات
+        
+        return representation
+
     def _fill_snapshot(self, contract: Contract):
         try:
             lic = contract.project.license
@@ -1260,6 +1424,26 @@ class ContractSerializer(serializers.ModelSerializer):
             contract.save(update_fields=["license_snapshot"])
 
     def create(self, validated_data):
+        # ✅ ملء بيانات المقاول من TenantSettings تلقائياً إذا لم تكن موجودة
+        project = validated_data.get('project')
+        if project and project.tenant:
+            try:
+                from authentication.models import TenantSettings
+                tenant_settings = TenantSettings.objects.get(tenant=project.tenant)
+                # ✅ ملء بيانات المقاول من TenantSettings إذا كانت فارغة
+                if not validated_data.get('contractor_name') and tenant_settings.contractor_name:
+                    validated_data['contractor_name'] = tenant_settings.contractor_name
+                if not validated_data.get('contractor_name_en') and tenant_settings.contractor_name_en:
+                    validated_data['contractor_name_en'] = tenant_settings.contractor_name_en
+                if not validated_data.get('contractor_trade_license') and tenant_settings.contractor_license_no:
+                    validated_data['contractor_trade_license'] = tenant_settings.contractor_license_no
+                if not validated_data.get('contractor_phone') and tenant_settings.contractor_phone:
+                    validated_data['contractor_phone'] = tenant_settings.contractor_phone
+                if not validated_data.get('contractor_email') and tenant_settings.contractor_email:
+                    validated_data['contractor_email'] = tenant_settings.contractor_email
+            except TenantSettings.DoesNotExist:
+                pass  # إذا لم تكن هناك إعدادات، نكمل بدون ملء البيانات
+        
         # ✅ حفظ owners في قاعدة البيانات (قابلة للتحرير)
         owners_data = validated_data.pop("owners", [])
         attachments_data = validated_data.pop("attachments", [])
@@ -1315,6 +1499,26 @@ class ContractSerializer(serializers.ModelSerializer):
             raise
 
     def update(self, instance, validated_data):
+        # ✅ ملء بيانات المقاول من TenantSettings تلقائياً (تحديث تلقائي)
+        project = instance.project
+        if project and project.tenant:
+            try:
+                from authentication.models import TenantSettings
+                tenant_settings = TenantSettings.objects.get(tenant=project.tenant)
+                # ✅ نستخدم بيانات TenantSettings دائماً لضمان التحديث التلقائي
+                if tenant_settings.contractor_name:
+                    validated_data['contractor_name'] = tenant_settings.contractor_name
+                if tenant_settings.contractor_name_en:
+                    validated_data['contractor_name_en'] = tenant_settings.contractor_name_en
+                if tenant_settings.contractor_license_no:
+                    validated_data['contractor_trade_license'] = tenant_settings.contractor_license_no
+                if tenant_settings.contractor_phone:
+                    validated_data['contractor_phone'] = tenant_settings.contractor_phone
+                if tenant_settings.contractor_email:
+                    validated_data['contractor_email'] = tenant_settings.contractor_email
+            except TenantSettings.DoesNotExist:
+                pass  # إذا لم تكن هناك إعدادات، نكمل بدون ملء البيانات
+        
         # ✅ تحديث owners في قاعدة البيانات (قابلة للتحرير)
         owners_data = validated_data.pop("owners", None)
         attachments_data = validated_data.pop("attachments", None)
@@ -1389,20 +1593,434 @@ class AwardingSerializer(serializers.ModelSerializer):
 
 
 # =========================
+# Variation (Price Change Order)
+# =========================
+class VariationSerializer(serializers.ModelSerializer):
+    project_name = serializers.SerializerMethodField()
+    variation_invoice_file = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Variation
+        fields = [
+            "id", "project",
+            "variation_number", "description",
+            "final_amount", "consultant_fees", "contractor_engineer_fees",
+            "total_amount", "discount",
+            "net_amount", "vat", "net_amount_with_vat",
+            "variation_invoice_file",
+            "amount", "approval_date", "approved_by", "attachments",
+            "project_name",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
+    
+    def validate_description(self, value):
+        """Ensure description is a string, not None"""
+        return value or ""
+    
+    def validate_approved_by(self, value):
+        """Ensure approved_by is a string, not None"""
+        return value or ""
+    
+    def validate_attachments(self, value):
+        """Ensure attachments is a list"""
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return []
+        return value
+    
+    def validate_variation_number(self, value):
+        """Convert empty string to None for auto-generation"""
+        return value if value and value.strip() else None
+    
+    def get_project_name(self, obj):
+        if not obj or not obj.project:
+            return None
+        try:
+            project = obj.project
+            if project.name and project.name.strip():
+                return project.name
+            return f"Project #{project.id}"
+        except Exception:
+            return None
+    
+    def get_variation_invoice_file(self, obj):
+        if obj.variation_invoice_file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.variation_invoice_file.url)
+            return obj.variation_invoice_file.url
+        return None
+    
+    def create(self, validated_data):
+        """Auto-generate variation_number if not provided and calculate consultant_fees from percentage"""
+        if not validated_data.get('variation_number'):
+            # Generate unique variation number
+            import uuid
+            validated_data['variation_number'] = f"VAR-{uuid.uuid4().hex[:8].upper()}"
+        
+        # Calculate consultant_fees from percentage if provided
+        if 'consultant_fees_percentage' in validated_data and 'final_amount' in validated_data:
+            from decimal import Decimal
+            final_amount = validated_data.get('final_amount', Decimal('0'))
+            percentage = validated_data.get('consultant_fees_percentage', Decimal('0'))
+            validated_data['consultant_fees'] = final_amount * (percentage / Decimal('100'))
+        
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        """Calculate consultant_fees from percentage if percentage is updated"""
+        # Calculate consultant_fees from percentage if percentage is provided
+        if 'consultant_fees_percentage' in validated_data:
+            from decimal import Decimal
+            final_amount = validated_data.get('final_amount', instance.final_amount)
+            percentage = validated_data.get('consultant_fees_percentage', Decimal('0'))
+            validated_data['consultant_fees'] = final_amount * (percentage / Decimal('100'))
+        
+        return super().update(instance, validated_data)
+
+
+# =========================
+# Invoice
+# =========================
+class InitialInvoiceSerializer(serializers.ModelSerializer):
+    project_name = serializers.SerializerMethodField()
+    remaining_balance = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    items = serializers.JSONField(default=list, required=False, allow_null=True)
+    
+    class Meta:
+        model = InitialInvoice
+        fields = [
+            "id", "project",
+            "amount", "stage", "description", "invoice_date", "invoice_number", "items",
+            "project_name", "remaining_balance", "status",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at", "remaining_balance", "status"]
+    
+    def to_representation(self, instance):
+        """Ensure items is always returned as a list"""
+        data = super().to_representation(instance)
+        # ✅ Ensure items is always an array, even if None or missing
+        if 'items' not in data or data['items'] is None:
+            data['items'] = []
+        elif not isinstance(data['items'], list):
+            data['items'] = [data['items']] if data['items'] else []
+        return data
+    
+    def validate_invoice_number(self, value):
+        """Convert empty string to None to avoid UNIQUE constraint violation"""
+        if value == "" or value is None:
+            return None
+        return value
+    
+    def create(self, validated_data):
+        """Auto-generate invoice_number if not provided"""
+        # Convert empty string to None
+        if not validated_data.get('invoice_number'):
+            validated_data['invoice_number'] = None
+        
+        # Generate invoice number if still None
+        if validated_data.get('invoice_number') is None:
+            import datetime
+            project_id = validated_data.get('project').id if validated_data.get('project') else 'X'
+            timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+            # Add random suffix to ensure uniqueness
+            import random
+            random_suffix = random.randint(1000, 9999)
+            validated_data['invoice_number'] = f"INV-{project_id}-{timestamp}-{random_suffix}"
+        
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        """Handle invoice_number update"""
+        # Convert empty string to None
+        if 'invoice_number' in validated_data:
+            if validated_data['invoice_number'] == "":
+                validated_data['invoice_number'] = None
+        
+        return super().update(instance, validated_data)
+    
+    def get_project_name(self, obj):
+        if not obj or not obj.project:
+            return None
+        try:
+            project = obj.project
+            if project.name and project.name.strip():
+                return project.name
+            return f"Project #{project.id}"
+        except Exception:
+            return None
+    
+    def get_remaining_balance(self, obj):
+        """Calculate remaining balance: Initial Invoice amount - sum of Actual Invoices"""
+        if not obj:
+            return None
+        try:
+            # ✅ Handle case where items field might not exist in database
+            try:
+                total_paid = obj.actual_invoices.aggregate(
+                    total=models.Sum('amount')
+                )['total'] or 0
+                return float(obj.amount - total_paid)
+            except Exception as e:
+                # If there's an error (e.g., items field doesn't exist), return amount
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error calculating remaining balance: {e}")
+                return float(obj.amount)
+        except Exception:
+            return float(obj.amount)
+    
+    def get_status(self, obj):
+        """Get invoice status: 'closed' if fully paid, 'open' if remaining balance"""
+        remaining = self.get_remaining_balance(obj)
+        return 'closed' if remaining <= 0 else 'open'
+    
+    def validate_invoice_number(self, value):
+        """Convert empty string to None to avoid UNIQUE constraint violation"""
+        if value == "" or value is None:
+            return None
+        return value
+    
+    def create(self, validated_data):
+        """Auto-generate invoice_number if not provided"""
+        # Convert empty string to None
+        if not validated_data.get('invoice_number'):
+            validated_data['invoice_number'] = None
+        
+        # Generate invoice number if still None
+        if validated_data.get('invoice_number') is None:
+            import datetime
+            project_id = validated_data.get('project').id if validated_data.get('project') else 'X'
+            timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+            # Add random suffix to ensure uniqueness
+            import random
+            random_suffix = random.randint(1000, 9999)
+            validated_data['invoice_number'] = f"INV-{project_id}-{timestamp}-{random_suffix}"
+        
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        """Handle invoice_number update"""
+        # Convert empty string to None
+        if 'invoice_number' in validated_data:
+            if validated_data['invoice_number'] == "":
+                validated_data['invoice_number'] = None
+        
+        return super().update(instance, validated_data)
+
+
+class ActualInvoiceSerializer(serializers.ModelSerializer):
+    project_name = serializers.SerializerMethodField()
+    payment_id = serializers.SerializerMethodField()
+    items = serializers.JSONField(default=list, required=False, allow_null=True)
+    
+    class Meta:
+        model = ActualInvoice
+        fields = [
+            "id", "project", "payment", "initial_invoice",
+            "amount", "invoice_date", "invoice_number", "description", "items",
+            "project_name", "payment_id",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at", "payment_id"]
+    
+    def to_representation(self, instance):
+        """Ensure items is always returned as a list"""
+        try:
+            data = super().to_representation(instance)
+        except Exception as e:
+            # ✅ Handle case where items field doesn't exist in database
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error in to_representation for ActualInvoice {instance.id}: {e}")
+            # Try to get basic fields manually
+            data = {
+                'id': instance.id,
+                'project': instance.project_id,
+                'payment': instance.payment_id if instance.payment else None,
+                'initial_invoice': instance.initial_invoice_id if instance.initial_invoice else None,
+                'amount': str(instance.amount),
+                'invoice_date': instance.invoice_date.isoformat() if instance.invoice_date else None,
+                'invoice_number': instance.invoice_number or None,
+                'description': instance.description or '',
+                'items': [],  # Default to empty array
+                'created_at': instance.created_at.isoformat() if instance.created_at else None,
+                'updated_at': instance.updated_at.isoformat() if instance.updated_at else None,
+            }
+            # Add computed fields
+            data['project_name'] = self.get_project_name(instance)
+            data['payment_id'] = self.get_payment_id(instance)
+        
+        # ✅ Ensure items is always an array, even if None or missing
+        if 'items' not in data or data['items'] is None:
+            data['items'] = []
+        elif not isinstance(data['items'], list):
+            data['items'] = [data['items']] if data['items'] else []
+        return data
+    
+    def validate(self, data):
+        """Validate that project is provided or can be derived from initial_invoice"""
+        if 'project' not in data and 'initial_invoice' in data and data['initial_invoice']:
+            # Try to get project from initial_invoice
+            try:
+                initial_invoice = data['initial_invoice']
+                if hasattr(initial_invoice, 'project'):
+                    data['project'] = initial_invoice.project
+            except Exception:
+                pass
+        
+        if 'project' not in data:
+            raise serializers.ValidationError({
+                'project': 'Project is required. Either provide project directly or ensure initial_invoice has a project.'
+            })
+        
+        return data
+    
+    def validate_invoice_number(self, value):
+        """Convert empty string to None to avoid UNIQUE constraint violation"""
+        if value == "" or value is None:
+            return None
+        return value
+    
+    def create(self, validated_data):
+        """Auto-generate invoice_number if not provided"""
+        # Convert empty string to None
+        if not validated_data.get('invoice_number'):
+            validated_data['invoice_number'] = None
+        
+        # Generate invoice number if still None
+        if validated_data.get('invoice_number') is None:
+            import datetime
+            project_id = validated_data.get('project').id if validated_data.get('project') else 'X'
+            timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+            # Add random suffix to ensure uniqueness
+            import random
+            random_suffix = random.randint(1000, 9999)
+            validated_data['invoice_number'] = f"ACT-{project_id}-{timestamp}-{random_suffix}"
+        
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        """Handle invoice_number update"""
+        # Convert empty string to None
+        if 'invoice_number' in validated_data:
+            if validated_data['invoice_number'] == "":
+                validated_data['invoice_number'] = None
+        
+        return super().update(instance, validated_data)
+    
+    def get_payment_id(self, obj):
+        """Get payment ID if payment exists"""
+        if obj.payment:
+            return obj.payment.id
+        return None
+    
+    def get_project_name(self, obj):
+        if not obj or not obj.project:
+            return None
+        try:
+            project = obj.project
+            if project.name and project.name.strip():
+                return project.name
+            return f"Project #{project.id}"
+        except Exception:
+            return None
+
+
+# =========================
 # Payment
 # =========================
 class PaymentSerializer(serializers.ModelSerializer):
     project_name = serializers.SerializerMethodField()
+    actual_invoice_id = serializers.SerializerMethodField()
+    deposit_slip = serializers.SerializerMethodField()
+    invoice_file = serializers.SerializerMethodField()
+    receipt_voucher = serializers.SerializerMethodField()
+    bank_payment_attachments = serializers.SerializerMethodField()
     
     class Meta:
         model = Payment
         fields = [
             "id", "project",
+            "payer", "payment_method",
             "amount", "date", "description",
+            "recipient_account_number", "sender_account_number", "transferor_name",
+            "cheque_holder_name", "cheque_account_number", "cheque_date",
+            "project_financial_account", "completion_percentage", "bank_payment_attachments",
+            "deposit_slip", "invoice_file", "receipt_voucher",
+            "actual_invoice_id",
             "project_name",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at", "actual_invoice_id"]
+    
+    def get_deposit_slip(self, obj):
+        if obj.deposit_slip:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.deposit_slip.url)
+            return obj.deposit_slip.url
+        return None
+    
+    def get_invoice_file(self, obj):
+        if obj.invoice_file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.invoice_file.url)
+            return obj.invoice_file.url
+        return None
+    
+    def get_receipt_voucher(self, obj):
+        if obj.receipt_voucher:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.receipt_voucher.url)
+            return obj.receipt_voucher.url
+        return None
+    
+    def get_bank_payment_attachments(self, obj):
+        if obj.bank_payment_attachments:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.bank_payment_attachments.url)
+            return obj.bank_payment_attachments.url
+        return None
+    
+    def get_actual_invoice_id(self, obj):
+        """Get actual_invoice ID via reverse relationship"""
+        try:
+            return obj.actual_invoice.id if hasattr(obj, 'actual_invoice') and obj.actual_invoice else None
+        except Exception:
+            return None
+    
+    def validate(self, data):
+        """Validate payment method based on payer"""
+        payer = data.get('payer', self.instance.payer if self.instance else 'owner')
+        payment_method = data.get('payment_method', self.instance.payment_method if self.instance else None)
+        
+        if payer == 'bank':
+            if payment_method and payment_method != 'bank_transfer':
+                raise serializers.ValidationError({
+                    'payment_method': 'Bank payments must use Bank Transfer only.'
+                })
+            # Force bank_transfer for bank payments
+            data['payment_method'] = 'bank_transfer'
+        elif payer == 'owner':
+            if not payment_method:
+                raise serializers.ValidationError({
+                    'payment_method': 'Payment method is required for owner payments.'
+                })
+            valid_methods = ['cash_deposit', 'cash_office', 'bank_transfer', 'bank_cheque']
+            if payment_method not in valid_methods:
+                raise serializers.ValidationError({
+                    'payment_method': f'Invalid payment method. Must be one of: {", ".join(valid_methods)}'
+                })
+        
+        return data
     
     def get_project_name(self, obj):
         """الحصول على اسم المشروع - نفس منطق ProjectSerializer.get_display_name"""

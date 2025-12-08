@@ -31,6 +31,8 @@ urlpatterns += [
     path("healthz/", healthz),
     path("admin/", admin.site.urls),
     path("api/csrf/", csrf_ping),       # يزرع كوكي CSRF
+    path("api/public/", include("authentication.public_urls")),  # Public APIs
+    path("api/auth/", include("authentication.urls")),  # Authentication APIs
     path("api/", include("projects.urls")),  # باقي الـ API
 ]
 

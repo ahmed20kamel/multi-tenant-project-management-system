@@ -2,13 +2,17 @@
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
+from django.db import models
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
-from .models import Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment
+from .models import (
+    Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment,
+    Variation, InitialInvoice, ActualInvoice
+)
 from .serializers import (
     ProjectSerializer,
     SitePlanSerializer,
@@ -16,9 +20,17 @@ from .serializers import (
     ContractSerializer,
     AwardingSerializer,
     PaymentSerializer,
+    VariationSerializer,
+    InitialInvoiceSerializer,
+    ActualInvoiceSerializer,
 )
 from decimal import Decimal
 from datetime import datetime
+from authentication.utils import (
+    requires_approval, create_pending_change, can_access_financial_data,
+    can_manage_contracts, can_manage_payments, is_company_admin, is_staff_user,
+    log_audit, get_client_ip
+)
 
 
 # ===============================
@@ -36,6 +48,395 @@ def csrf_ping(request):
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all().order_by("-created_at")
     serializer_class = ProjectSerializer
+    
+    def get_queryset(self):
+        """تصفية المشاريع حسب tenant المستخدم"""
+        queryset = super().get_queryset()
+        
+        # إذا كان المستخدم superuser، يمكنه رؤية جميع المشاريع
+        if self.request.user.is_superuser:
+            return queryset
+        
+        # تصفية حسب tenant المستخدم
+        if hasattr(self.request, 'tenant') and self.request.tenant:
+            queryset = queryset.filter(tenant=self.request.tenant)
+        elif hasattr(self.request.user, 'tenant') and self.request.user.tenant:
+            queryset = queryset.filter(tenant=self.request.user.tenant)
+        else:
+            # إذا لم يكن للمستخدم tenant، لا يعرض أي مشاريع
+            queryset = queryset.none()
+        
+        return queryset
+    
+    def perform_create(self, serializer):
+        """ربط المشروع الجديد بـ tenant المستخدم والتحقق من Limits"""
+        from authentication.models import TenantSettings
+        from rest_framework import serializers as drf_serializers
+        
+        tenant = None
+        if hasattr(self.request, 'tenant') and self.request.tenant:
+            tenant = self.request.tenant
+        elif hasattr(self.request.user, 'tenant') and self.request.user.tenant:
+            tenant = self.request.user.tenant
+        
+        # التحقق من Limits (فقط للمستخدمين التابعين لشركة)
+        if tenant and not self.request.user.is_superuser:
+            try:
+                settings = tenant.settings
+                # حساب عدد المشاريع الحالية
+                current_projects_count = Project.objects.filter(tenant=tenant).count()
+                
+                # التحقق من الحد الأقصى
+                if current_projects_count >= settings.max_projects:
+                    raise drf_serializers.ValidationError({
+                        'error': f'تم الوصول للحد الأقصى لعدد المشاريع ({settings.max_projects}). يرجى التواصل مع مدير النظام لزيادة الحد.'
+                    })
+                
+                # التحقق من حالة الاشتراك
+                if settings.subscription_status in ['suspended', 'expired']:
+                    raise drf_serializers.ValidationError({
+                        'error': f'لا يمكن إنشاء مشاريع جديدة. حالة الاشتراك: {settings.get_subscription_status_display()}'
+                    })
+            except TenantSettings.DoesNotExist:
+                pass  # إذا لم تكن هناك إعدادات، نسمح بإنشاء المشروع
+        
+        # التحقق من الصلاحيات: Staff User يحتاج موافقة
+        if requires_approval(self.request.user, 'Project'):
+            # إنشاء Pending Change بدلاً من إنشاء المشروع مباشرة
+            data = serializer.validated_data
+            pending_change = create_pending_change(
+                user=self.request.user,
+                action='create',
+                model_name='Project',
+                object_id='new',  # سيتم تحديثه بعد الموافقة
+                data=data,
+                tenant=tenant
+            )
+            # تسجيل Audit Log
+            log_audit(
+                user=self.request.user,
+                action='create',
+                model_name='Project',
+                description=f'Created project pending approval (ID: {pending_change.id})',
+                ip_address=get_client_ip(self.request)
+            )
+            # إرجاع رسالة للمستخدم
+            raise drf_serializers.ValidationError({
+                'message': 'تم إرسال طلب إنشاء المشروع للموافقة',
+                'pending_change_id': pending_change.id,
+                'requires_approval': True
+            })
+        
+        # ربط المشروع بـ tenant
+        if tenant:
+            serializer.save(tenant=tenant)
+        else:
+            serializer.save()
+    
+    @action(detail=True, methods=['post'])
+    def submit(self, request, pk=None):
+        """إرسال المشروع للموافقة"""
+        from authentication.utils import check_workflow_permission, log_audit, get_client_ip
+        from django.utils import timezone
+        
+        project = self.get_object()
+        user = request.user
+        
+        if not project.current_stage:
+            return Response(
+                {'error': 'Project has no current stage'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # التحقق من الصلاحية
+        if not check_workflow_permission(user, project.current_stage, 'submit'):
+            return Response(
+                {'error': 'Permission denied: You do not have permission to submit'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # تحديث حالة الموافقة
+        project.approval_status = 'pending'
+        project.save(update_fields=['approval_status'])
+        
+        # تسجيل العملية
+        log_audit(
+            user=user,
+            action='submit',
+            model_name='Project',
+            object_id=project.id,
+            description=f'Submitted project for approval',
+            ip_address=get_client_ip(request),
+            stage=project.current_stage
+        )
+        
+        return Response({
+            'message': 'Project submitted successfully',
+            'approval_status': project.approval_status
+        })
+    
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """الموافقة على المشروع"""
+        from authentication.utils import check_workflow_permission, log_audit, get_client_ip
+        from django.utils import timezone
+        
+        project = self.get_object()
+        user = request.user
+        notes = request.data.get('notes', '')
+        
+        if not project.current_stage:
+            return Response(
+                {'error': 'Project has no current stage'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # التحقق من الصلاحية
+        if not check_workflow_permission(user, project.current_stage, 'approve'):
+            return Response(
+                {'error': 'Permission denied: You do not have permission to approve'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # تحديث حالة الموافقة
+        project.approval_status = 'approved'
+        project.last_approved_by = user
+        project.last_approved_at = timezone.now()
+        project.approval_notes = notes
+        project.save(update_fields=['approval_status', 'last_approved_by', 'last_approved_at', 'approval_notes'])
+        
+        # تسجيل العملية
+        log_audit(
+            user=user,
+            action='approve',
+            model_name='Project',
+            object_id=project.id,
+            description=f'Approved project',
+            changes={'before': {'approval_status': 'pending'}, 'after': {'approval_status': 'approved'}},
+            ip_address=get_client_ip(request),
+            stage=project.current_stage
+        )
+        
+        return Response({
+            'message': 'Project approved successfully',
+            'approval_status': project.approval_status
+        })
+    
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """رفض المشروع"""
+        from authentication.utils import check_workflow_permission, log_audit, get_client_ip
+        from django.utils import timezone
+        
+        project = self.get_object()
+        user = request.user
+        notes = request.data.get('notes', '')
+        
+        if not notes:
+            return Response(
+                {'error': 'Rejection notes are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not project.current_stage:
+            return Response(
+                {'error': 'Project has no current stage'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # التحقق من الصلاحية
+        if not check_workflow_permission(user, project.current_stage, 'reject'):
+            return Response(
+                {'error': 'Permission denied: You do not have permission to reject'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # تحديث حالة الموافقة
+        project.approval_status = 'rejected'
+        project.last_approved_by = user
+        project.last_approved_at = timezone.now()
+        project.approval_notes = notes
+        project.save(update_fields=['approval_status', 'last_approved_by', 'last_approved_at', 'approval_notes'])
+        
+        # تسجيل العملية
+        log_audit(
+            user=user,
+            action='reject',
+            model_name='Project',
+            object_id=project.id,
+            description=f'Rejected project: {notes}',
+            changes={'before': {'approval_status': 'pending'}, 'after': {'approval_status': 'rejected'}},
+            ip_address=get_client_ip(request),
+            stage=project.current_stage
+        )
+        
+        return Response({
+            'message': 'Project rejected',
+            'approval_status': project.approval_status
+        })
+    
+    @action(detail=True, methods=['post'])
+    def request_delete(self, request, pk=None):
+        """طلب حذف المشروع"""
+        from authentication.utils import check_workflow_permission, log_audit, get_client_ip
+        from django.utils import timezone
+        
+        project = self.get_object()
+        user = request.user
+        reason = request.data.get('reason', '')
+        
+        if not reason:
+            return Response(
+                {'error': 'Delete reason is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not project.current_stage:
+            return Response(
+                {'error': 'Project has no current stage'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # التحقق من الصلاحية
+        if not check_workflow_permission(user, project.current_stage, 'delete_request'):
+            return Response(
+                {'error': 'Permission denied: You do not have permission to request delete'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # تحديث حالة الموافقة
+        project.approval_status = 'delete_requested'
+        project.delete_requested_by = user
+        project.delete_requested_at = timezone.now()
+        project.delete_reason = reason
+        project.save(update_fields=['approval_status', 'delete_requested_by', 'delete_requested_at', 'delete_reason'])
+        
+        # تسجيل العملية
+        log_audit(
+            user=user,
+            action='delete_request',
+            model_name='Project',
+            object_id=project.id,
+            description=f'Requested to delete project: {reason}',
+            ip_address=get_client_ip(request),
+            stage=project.current_stage
+        )
+        
+        return Response({
+            'message': 'Delete request submitted',
+            'approval_status': project.approval_status
+        })
+    
+    @action(detail=True, methods=['post'])
+    def approve_delete(self, request, pk=None):
+        """الموافقة على حذف المشروع"""
+        from authentication.utils import check_workflow_permission, log_audit, get_client_ip
+        from django.utils import timezone
+        
+        project = self.get_object()
+        user = request.user
+        
+        if project.approval_status != 'delete_requested':
+            return Response(
+                {'error': 'Project is not in delete_requested status'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not project.current_stage:
+            return Response(
+                {'error': 'Project has no current stage'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # التحقق من الصلاحية
+        if not check_workflow_permission(user, project.current_stage, 'delete_approve'):
+            return Response(
+                {'error': 'Permission denied: You do not have permission to approve delete'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # تحديث حالة الموافقة
+        project.approval_status = 'delete_approved'
+        project.delete_approved_by = user
+        project.delete_approved_at = timezone.now()
+        project.save(update_fields=['approval_status', 'delete_approved_by', 'delete_approved_at'])
+        
+        # تسجيل العملية
+        log_audit(
+            user=user,
+            action='delete_approve',
+            model_name='Project',
+            object_id=project.id,
+            description=f'Approved deletion of project',
+            ip_address=get_client_ip(request),
+            stage=project.current_stage
+        )
+        
+        # حذف المشروع فعلياً
+        project_id = project.id
+        project.delete()
+        
+        return Response({
+            'message': 'Project deletion approved and project deleted',
+            'deleted_project_id': project_id
+        })
+    
+    @action(detail=True, methods=['post'])
+    def move_to_stage(self, request, pk=None):
+        """نقل المشروع إلى مرحلة جديدة"""
+        from authentication.utils import log_audit, get_client_ip
+        from authentication.models import WorkflowStage
+        from django.utils import timezone
+        
+        project = self.get_object()
+        user = request.user
+        stage_code = request.data.get('stage_code')
+        
+        if not stage_code:
+            return Response(
+                {'error': 'stage_code is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # فقط Staff يمكنهم نقل المشاريع بين المراحل
+        if not user.is_staff:
+            return Response(
+                {'error': 'Permission denied: Only staff can move projects between stages'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            new_stage = WorkflowStage.objects.get(code=stage_code, is_active=True)
+        except WorkflowStage.DoesNotExist:
+            return Response(
+                {'error': f'Stage not found: {stage_code}'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        old_stage = project.current_stage
+        project.current_stage = new_stage
+        project.approval_status = 'draft'  # إعادة تعيين حالة الموافقة
+        project.save(update_fields=['current_stage', 'approval_status'])
+        
+        # تسجيل العملية
+        log_audit(
+            user=user,
+            action='edit',
+            model_name='Project',
+            object_id=project.id,
+            description=f'Moved project from {old_stage.code if old_stage else "None"} to {new_stage.code}',
+            changes={
+                'before': {'stage': old_stage.code if old_stage else None},
+                'after': {'stage': new_stage.code}
+            },
+            ip_address=get_client_ip(request),
+            stage=new_stage
+        )
+        
+        return Response({
+            'message': f'Project moved to stage {new_stage.name}',
+            'current_stage': new_stage.code
+        })
 
 
 # ===============================
@@ -54,10 +455,44 @@ class _ProjectChildViewSet(viewsets.ModelViewSet):
         return get_object_or_404(Project, pk=self.kwargs["project_pk"])
 
     def get_queryset(self):
-        return self.queryset.filter(project_id=self.kwargs["project_pk"])
+        """تصفية البيانات حسب tenant المستخدم"""
+        queryset = self.queryset
+        
+        # تصفية حسب tenant
+        if not self.request.user.is_superuser:
+            if hasattr(self.request, 'tenant') and self.request.tenant:
+                queryset = queryset.filter(tenant=self.request.tenant)
+            elif hasattr(self.request.user, 'tenant') and self.request.user.tenant:
+                queryset = queryset.filter(tenant=self.request.user.tenant)
+            else:
+                queryset = queryset.none()
+        
+        # تصفية حسب project
+        project_pk = self.kwargs.get("project_pk")
+        if project_pk:
+            # التحقق من أن المشروع ينتمي لنفس tenant
+            try:
+                project = Project.objects.get(pk=project_pk)
+                if not self.request.user.is_superuser:
+                    if hasattr(self.request, 'tenant') and self.request.tenant:
+                        if project.tenant != self.request.tenant:
+                            return queryset.none()
+                    elif hasattr(self.request.user, 'tenant') and self.request.user.tenant:
+                        if project.tenant != self.request.user.tenant:
+                            return queryset.none()
+                queryset = queryset.filter(project_id=project_pk)
+            except Project.DoesNotExist:
+                return queryset.none()
+        
+        return queryset
 
     def perform_create(self, serializer):
-        serializer.save(project=self._get_project())
+        project = self._get_project()
+        # ربط البيانات بـ tenant المشروع
+        instance = serializer.save(project=project, tenant=project.tenant)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Created {self.queryset.model.__name__} with ID {instance.id} for project {project.id} and tenant {project.tenant.id if project.tenant else 'None'}")
 
     def perform_update(self, serializer):
         serializer.save(project=self._get_project())
@@ -201,6 +636,13 @@ class ContractViewSet(_ProjectChildViewSet):
     serializer_class = ContractSerializer
 
     def create(self, request, *args, **kwargs):
+        # التحقق من الصلاحيات: Staff User لا يمكنه إنشاء عقود
+        if not can_manage_contracts(request.user):
+            return Response(
+                {"error": "You do not have permission to create contracts. Only company admin can manage contracts."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         project = self._get_project()
         if hasattr(project, "contract"):
             return Response(
@@ -208,6 +650,24 @@ class ContractViewSet(_ProjectChildViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return super().create(request, *args, **kwargs)
+    
+    def perform_update(self, serializer):
+        # التحقق من الصلاحيات: Staff User لا يمكنه تعديل عقود
+        if not can_manage_contracts(self.request.user):
+            from rest_framework import serializers as drf_serializers
+            raise drf_serializers.ValidationError({
+                'error': 'You do not have permission to update contracts. Only company admin can manage contracts.'
+            })
+        serializer.save(project=self._get_project())
+    
+    def perform_destroy(self, instance):
+        # التحقق من الصلاحيات: Staff User لا يمكنه حذف عقود
+        if not can_manage_contracts(self.request.user):
+            from rest_framework import serializers as drf_serializers
+            raise drf_serializers.ValidationError({
+                'error': 'You do not have permission to delete contracts. Only company admin can manage contracts.'
+            })
+        instance.delete()
 
 
 # ===============================
@@ -238,6 +698,16 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         try:
             queryset = Payment.objects.all().order_by("-date", "-created_at")
+            
+            # تصفية حسب tenant
+            if not self.request.user.is_superuser:
+                if hasattr(self.request, 'tenant') and self.request.tenant:
+                    queryset = queryset.filter(tenant=self.request.tenant)
+                elif hasattr(self.request.user, 'tenant') and self.request.user.tenant:
+                    queryset = queryset.filter(tenant=self.request.user.tenant)
+                else:
+                    queryset = queryset.none()
+            
             project_pk = self.kwargs.get("project_pk")
             if project_pk:
                 queryset = queryset.filter(project_id=project_pk)
@@ -260,20 +730,142 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return Response([], status=status.HTTP_200_OK)
 
     def perform_create(self, serializer):
+        # التحقق من الصلاحيات: Staff User لا يمكنه إنشاء دفعات
+        if not can_manage_payments(self.request.user):
+            from rest_framework import serializers as drf_serializers
+            raise drf_serializers.ValidationError({
+                'error': 'You do not have permission to create payments. Only company admin can manage payments.'
+            })
+        
+        # ربط الدفعة بـ tenant
+        tenant = None
+        if hasattr(self.request, 'tenant') and self.request.tenant:
+            tenant = self.request.tenant
+        elif hasattr(self.request.user, 'tenant') and self.request.user.tenant:
+            tenant = self.request.user.tenant
+        
         project_pk = self.kwargs.get("project_pk")
         if project_pk:
             project = get_object_or_404(Project, pk=project_pk)
-            payment = serializer.save(project=project)
-            # ✅ تحديث حالة المشروع تلقائياً بعد إضافة الدفعة (سيتم عبر signal)
+            payment = serializer.save(project=project, tenant=tenant if tenant else project.tenant)
         else:
-            payment = serializer.save()
-            # ✅ إذا كان هناك مشروع مرتبط، نحدث حالته (سيتم عبر signal)
+            payment = serializer.save(tenant=tenant)
+        
+        # ✅ ربط Payment بفاتورة فعلية موجودة أو إنشاء واحدة جديدة
+        if payment.payer == 'owner' and payment.project:
+            try:
+                # Get actual_invoice_id from request data if provided
+                actual_invoice_id = None
+                if hasattr(self.request, 'data'):
+                    request_data = self.request.data
+                    if isinstance(request_data, dict):
+                        actual_invoice_id = request_data.get('actual_invoice')
+                    elif hasattr(request_data, 'get'):
+                        actual_invoice_id = request_data.get('actual_invoice')
+                
+                # ✅ إذا تم تحديد فاتورة فعلية موجودة، ربطها بالدفعة
+                if actual_invoice_id:
+                    try:
+                        actual_invoice = ActualInvoice.objects.get(
+                            id=int(actual_invoice_id),
+                            project=payment.project,
+                            payment__isnull=True  # ✅ فقط الفواتير غير المرتبطة بدفعة
+                        )
+                        # ✅ ربط الفاتورة الفعلية بالدفعة
+                        actual_invoice.payment = payment
+                        actual_invoice.save(update_fields=['payment'])
+                    except (ActualInvoice.DoesNotExist, ValueError):
+                        from rest_framework import serializers as drf_serializers
+                        raise drf_serializers.ValidationError({
+                            'actual_invoice': f'Actual Invoice {actual_invoice_id} not found or already linked to another payment.'
+                        })
+                else:
+                    # ✅ إذا لم يتم تحديد فاتورة فعلية، إنشاء واحدة جديدة (المنطق القديم)
+                    initial_invoice_id = None
+                    if hasattr(self.request, 'data'):
+                        request_data = self.request.data
+                        if isinstance(request_data, dict):
+                            initial_invoice_id = request_data.get('initial_invoice')
+                        elif hasattr(request_data, 'get'):
+                            initial_invoice_id = request_data.get('initial_invoice')
+                    
+                    initial_invoice = None
+                    if initial_invoice_id:
+                        try:
+                            initial_invoice = InitialInvoice.objects.get(
+                                id=int(initial_invoice_id),
+                                project=payment.project
+                            )
+                        except (InitialInvoice.DoesNotExist, ValueError):
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(f"Initial Invoice {initial_invoice_id} not found for project {payment.project.id}")
+                    
+                    # If no initial invoice specified, try to find the latest open one
+                    if not initial_invoice:
+                        initial_invoice = InitialInvoice.objects.filter(
+                            project=payment.project
+                        ).order_by('-invoice_date', '-created_at').first()
+                    
+                    # Validate amount doesn't exceed remaining balance
+                    if initial_invoice:
+                        # Calculate remaining balance (exclude current payment's actual invoice if editing)
+                        exclude_id = None
+                        if hasattr(payment, 'actual_invoice') and payment.actual_invoice:
+                            exclude_id = payment.actual_invoice.id
+                        
+                        total_paid = ActualInvoice.objects.filter(
+                            initial_invoice=initial_invoice
+                        ).exclude(id=exclude_id).aggregate(
+                            total=models.Sum('amount')
+                        )['total'] or 0
+                        
+                        remaining_balance = float(initial_invoice.amount) - float(total_paid)
+                        
+                        if float(payment.amount) > remaining_balance:
+                            from rest_framework import serializers as drf_serializers
+                            raise drf_serializers.ValidationError({
+                                'amount': f'Payment amount ({payment.amount}) exceeds remaining balance ({remaining_balance}) for Initial Invoice {initial_invoice.id}'
+                            })
+                    
+                    # Create ActualInvoice linked to this payment
+                    actual_invoice = ActualInvoice.objects.create(
+                        project=payment.project,
+                        payment=payment,
+                        initial_invoice=initial_invoice,
+                        amount=payment.amount,
+                        invoice_date=payment.date,
+                        description=payment.description or f"Payment invoice for {payment.amount}",
+                        tenant=payment.tenant
+                    )
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error linking/creating ActualInvoice for payment {payment.id}: {e}")
+                # Re-raise validation errors
+                from rest_framework import serializers as drf_serializers
+                if isinstance(e, drf_serializers.ValidationError):
+                    raise
+        
+        # ✅ تحديث حالة المشروع تلقائياً بعد إضافة الدفعة (سيتم عبر signal)
 
     def perform_update(self, serializer):
+        # التحقق من الصلاحيات: Staff User لا يمكنه تعديل دفعات
+        if not can_manage_payments(self.request.user):
+            from rest_framework import serializers as drf_serializers
+            raise drf_serializers.ValidationError({
+                'error': 'You do not have permission to update payments. Only company admin can manage payments.'
+            })
         payment = serializer.save()
         # ✅ تحديث حالة المشروع تلقائياً بعد تعديل الدفعة (سيتم عبر signal)
     
     def perform_destroy(self, instance):
+        # التحقق من الصلاحيات: Staff User لا يمكنه حذف دفعات
+        if not can_manage_payments(self.request.user):
+            from rest_framework import serializers as drf_serializers
+            raise drf_serializers.ValidationError({
+                'error': 'You do not have permission to delete payments. Only company admin can manage payments.'
+            })
         project_id = instance.project_id if instance.project else None
         instance.delete()
         # ✅ تحديث حالة المشروع تلقائياً بعد حذف الدفعة (سيتم عبر signal)
@@ -282,3 +874,192 @@ class PaymentViewSet(viewsets.ModelViewSet):
         ctx = super().get_serializer_context()
         ctx["request"] = self.request
         return ctx
+
+
+# =========================
+# Variation ViewSet
+# =========================
+class VariationViewSet(_ProjectChildViewSet):
+    queryset = Variation.objects.all().order_by("-approval_date", "-created_at")
+    serializer_class = VariationSerializer
+
+    def perform_create(self, serializer):
+        project_pk = self.kwargs.get("project_pk")
+        if project_pk:
+            project = get_object_or_404(Project, pk=project_pk)
+            variation = serializer.save(project=project, tenant=project.tenant)
+            # Recalculate project values after variation is added
+            _recalculate_project_after_variation(project, variation)
+        else:
+            variation = serializer.save()
+            if variation.project:
+                _recalculate_project_after_variation(variation.project, variation)
+
+    def perform_update(self, serializer):
+        old_net_with_vat = serializer.instance.net_amount_with_vat if serializer.instance else None
+        variation = serializer.save()
+        if variation.project:
+            # Always recalculate when variation is updated
+            _recalculate_project_after_variation(variation.project, variation)
+
+    def perform_destroy(self, instance):
+        project = instance.project
+        net_with_vat = instance.net_amount_with_vat or Decimal('0')
+        instance.delete()
+        # Recalculate project values after variation is removed
+        if project:
+            _recalculate_project_after_variation_removal(project, net_with_vat)
+
+
+# =========================
+# Initial Invoice ViewSet
+# =========================
+class InitialInvoiceViewSet(_ProjectChildViewSet):
+    queryset = InitialInvoice.objects.all().order_by("-invoice_date", "-created_at")
+    serializer_class = InitialInvoiceSerializer
+    
+    def list(self, request, *args, **kwargs):
+        """Handle potential database errors gracefully"""
+        try:
+            return super().list(request, *args, **kwargs)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error listing initial invoices: {e}", exc_info=True)
+            # ✅ Return empty list instead of 500 error if items field doesn't exist
+            return Response([], status=status.HTTP_200_OK)
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Handle potential database errors gracefully"""
+        try:
+            return super().retrieve(request, *args, **kwargs)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error retrieving initial invoice: {e}", exc_info=True)
+            return Response(
+                {"detail": "Error retrieving invoice. Please check database schema."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# =========================
+# Actual Invoice ViewSet
+# =========================
+class ActualInvoiceViewSet(_ProjectChildViewSet):
+    queryset = ActualInvoice.objects.all().order_by("-invoice_date", "-created_at")
+    serializer_class = ActualInvoiceSerializer
+    
+    def list(self, request, *args, **kwargs):
+        """Handle potential database errors gracefully"""
+        try:
+            return super().list(request, *args, **kwargs)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error listing actual invoices: {e}", exc_info=True)
+            # ✅ Return empty list instead of 500 error if items field doesn't exist
+            return Response([], status=status.HTTP_200_OK)
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Handle potential database errors gracefully"""
+        try:
+            return super().retrieve(request, *args, **kwargs)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error retrieving actual invoice: {e}", exc_info=True)
+            return Response(
+                {"detail": "Error retrieving invoice. Please check database schema."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# =========================
+# Helper Functions for Recalculation
+# =========================
+def _recalculate_project_after_variation(project, variation):
+    """Recalculate project values after adding/updating a variation"""
+    try:
+        from decimal import Decimal
+        
+        # Get contract
+        try:
+            contract = project.contract
+        except Contract.DoesNotExist:
+            return
+        
+        # Calculate total variations for this project using net_amount_with_vat (المبلغ الصافي بالضريبة)
+        total_variations = Variation.objects.filter(project=project).aggregate(
+            total=models.Sum('net_amount_with_vat')
+        )['total'] or Decimal('0')
+        
+        # Get original value (before any variations)
+        # We need to subtract old variations to get the base value
+        try:
+            # Try to get the original value from contract (before variations)
+            # If not available, we'll need to calculate it differently
+            original_value = contract.total_project_value or Decimal('0')
+            # Subtract all current variations to get base value
+            current_variations_sum = Variation.objects.filter(project=project).exclude(id=variation.id).aggregate(
+                total=models.Sum('net_amount_with_vat')
+            )['total'] or Decimal('0')
+            base_value = original_value - current_variations_sum
+        except:
+            # Fallback: use contract's original value if available
+            base_value = contract.total_project_value or Decimal('0')
+        
+        # Update total_project_value (base + all variations with VAT)
+        contract.total_project_value = base_value + total_variations
+        
+        # Recalculate owner share if it's calculated
+        if contract.contract_classification == "housing_loan_program":
+            # Owner share = total - bank value
+            bank_value = contract.total_bank_value or Decimal('0')
+            contract.total_owner_value = contract.total_project_value - bank_value
+        else:
+            # For private funding, owner value = total
+            contract.total_owner_value = contract.total_project_value
+        
+        contract.save(update_fields=['total_project_value', 'total_owner_value'])
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error recalculating project after variation: {e}")
+
+
+def _recalculate_project_after_variation_removal(project, removed_net_with_vat):
+    """Recalculate project values after removing a variation"""
+    try:
+        from decimal import Decimal
+        
+        # Get contract
+        try:
+            contract = project.contract
+        except Contract.DoesNotExist:
+            return
+        
+        # Calculate total variations for this project (excluding the removed one)
+        total_variations = Variation.objects.filter(project=project).aggregate(
+            total=models.Sum('net_amount_with_vat')
+        )['total'] or Decimal('0')
+        
+        # Update total_project_value
+        # Subtract the removed variation's net_amount_with_vat from current total
+        current_total = contract.total_project_value or Decimal('0')
+        contract.total_project_value = current_total - removed_net_with_vat + total_variations
+        
+        # Recalculate owner share
+        if contract.contract_classification == "housing_loan_program":
+            bank_value = contract.total_bank_value or Decimal('0')
+            contract.total_owner_value = contract.total_project_value - bank_value
+        else:
+            contract.total_owner_value = contract.total_project_value
+        
+        contract.save(update_fields=['total_project_value', 'total_owner_value'])
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error recalculating project after variation removal: {e}")

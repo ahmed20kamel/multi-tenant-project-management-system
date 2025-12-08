@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../services/api";
 import { toInputDateUnified } from "../utils/dateHelpers";
-import { EMPTY_OWNER } from "../pages/wizard/components/OwnerForm";
+import { EMPTY_OWNER } from "../features/projects/wizard/components/OwnerForm";
 import { sqm2ft, ft2sqm } from "../utils/areaConverters";
 
 const INITIAL_FORM = {

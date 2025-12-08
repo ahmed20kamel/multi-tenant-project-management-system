@@ -1,16 +1,71 @@
-# React + Vite
+# Frontend - Multi-Tenant SaaS System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+هذا المجلد يحتوي على تطبيق React للمشروع.
 
-Currently, two official plugins are available:
+## 📁 Structure
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```
+frontend/
+├── src/
+│   ├── components/      # Reusable UI components
+│   ├── features/        # Feature-based modules
+│   ├── hooks/          # Custom React hooks
+│   ├── services/       # API services
+│   ├── utils/          # Utility functions
+│   ├── styles/         # Global styles
+│   └── config/         # Configuration files
+│
+├── public/             # Static files
+├── package.json        # Dependencies
+└── vite.config.js      # Vite configuration
+```
 
-## React Compiler
+## 🚀 Getting Started
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Installation
 
-## Expanding the ESLint configuration
+```bash
+npm install
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### Development
+
+```bash
+npm run dev
+```
+
+### Build
+
+```bash
+npm run build
+```
+
+### Preview
+
+```bash
+npm run preview
+```
+
+## 📚 Documentation
+
+- [Project Structure](../PROJECT_STRUCTURE.md)
+- [Organization Plan](../ORGANIZATION_PLAN.md)
+
+## 🎯 Features
+
+- ✅ Multi-tenant support
+- ✅ Role-based access control
+- ✅ Internationalization (i18n)
+- ✅ Theme customization
+- ✅ File upload with progress
+- ✅ Form validation
+- ✅ Responsive design
+
+## 🛠️ Tech Stack
+
+- **React** - UI library
+- **Vite** - Build tool
+- **React Router** - Routing
+- **Axios** - HTTP client
+- **i18next** - Internationalization
+- **Material-UI** - UI components

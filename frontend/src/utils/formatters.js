@@ -29,13 +29,23 @@ export const formatNumber = (value, options = {}) => {
 };
 
 /**
- * تنسيق مبلغ مالي (AED)
+ * تنسيق مبلغ مالي (AED) - Unified format: AED 1,200.50
  * @param {string|number} value - القيمة المراد تنسيقها
+ * @param {object} options - خيارات التنسيق
+ * @param {boolean} options.showDecimals - عرض الكسور العشرية (default: true)
  * @returns {string} - المبلغ المنسق
  */
-export const formatMoney = (value) => {
+export const formatMoney = (value, options = {}) => {
+  const { showDecimals = true } = options;
   const num = Number(String(value || 0).replace(/,/g, ""));
   if (!Number.isFinite(num)) return "—";
+  
+  if (showDecimals) {
+    return `AED ${num.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
   return `AED ${Math.round(num).toLocaleString("en-US")}`;
 };
 

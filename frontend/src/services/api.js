@@ -146,3 +146,4 @@ export function updateFile(url, formData, onUploadProgress, config = {}) {
 
 export { api };
 export default api;
+

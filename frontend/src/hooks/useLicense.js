@@ -79,6 +79,13 @@ export default function useLicense(projectId, i18n) {
         if (!mounted) return;
         if (Array.isArray(data) && data.length) {
           const s = data[0];
+          console.log('✅ License data loaded from API:', {
+            contractor_name: s.contractor_name,
+            contractor_name_en: s.contractor_name_en,
+            contractor_license_no: s.contractor_license_no,
+            contractor_phone: s.contractor_phone,
+            contractor_email: s.contractor_email,
+          });
           setExistingId(s.id);
           setForm((prev) => ({
             ...INITIAL_FORM,

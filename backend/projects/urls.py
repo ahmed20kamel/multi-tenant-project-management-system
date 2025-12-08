@@ -7,6 +7,9 @@ from .views import (
     ContractViewSet,
     AwardingViewSet,
     PaymentViewSet,
+    VariationViewSet,
+    InitialInvoiceViewSet,
+    ActualInvoiceViewSet,
 )
 
 # Projects
@@ -45,6 +48,24 @@ payment_detail = PaymentViewSet.as_view(
     {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
 )
 
+# Variation ⬇️
+variation_list = VariationViewSet.as_view({"get": "list", "post": "create"})
+variation_detail = VariationViewSet.as_view(
+    {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
+)
+
+# Initial Invoice ⬇️
+initial_invoice_list = InitialInvoiceViewSet.as_view({"get": "list", "post": "create"})
+initial_invoice_detail = InitialInvoiceViewSet.as_view(
+    {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
+)
+
+# Actual Invoice ⬇️
+actual_invoice_list = ActualInvoiceViewSet.as_view({"get": "list", "post": "create"})
+actual_invoice_detail = ActualInvoiceViewSet.as_view(
+    {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
+)
+
 urlpatterns = [
     path("projects/", project_list, name="project-list"),
     path("projects/<int:pk>/", project_detail, name="project-detail"),
@@ -68,4 +89,14 @@ urlpatterns = [
     path("payments/<int:pk>/", payment_detail, name="payment-detail"),
     path("projects/<int:project_pk>/payments/", payment_list, name="project-payment-list"),
     path("projects/<int:project_pk>/payments/<int:pk>/", payment_detail, name="project-payment-detail"),
+    
+    # ✅ Variation endpoints
+    path("projects/<int:project_pk>/variations/", variation_list, name="variation-list"),
+    path("projects/<int:project_pk>/variations/<int:pk>/", variation_detail, name="variation-detail"),
+    
+    # ✅ Invoice endpoints
+    path("projects/<int:project_pk>/initial-invoices/", initial_invoice_list, name="initial-invoice-list"),
+    path("projects/<int:project_pk>/initial-invoices/<int:pk>/", initial_invoice_detail, name="initial-invoice-detail"),
+    path("projects/<int:project_pk>/actual-invoices/", actual_invoice_list, name="actual-invoice-list"),
+    path("projects/<int:project_pk>/actual-invoices/<int:pk>/", actual_invoice_detail, name="actual-invoice-detail"),
 ]

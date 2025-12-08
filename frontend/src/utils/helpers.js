@@ -1,5 +1,5 @@
 // دوال مساعدة عامة
-import i18n from "../i18n";
+import i18n from "../config/i18n";
 
 // تحويل قيمة إلى رقم
 export const num = (v, d = 0) => {

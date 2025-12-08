@@ -1,10 +1,22 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
+from decimal import Decimal
 
 # ====== أساس timestamps ======
 class TimeStampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    # Multi-Tenant: ربط جميع النماذج بالشركة (Tenant)
+    tenant = models.ForeignKey(
+        'authentication.Tenant',
+        on_delete=models.CASCADE,
+        related_name='%(class)s_set',
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="الشركة التي ينتمي إليها هذا السجل"
+    )
 
     class Meta:
         abstract = True
@@ -12,6 +24,16 @@ class TimeStampedModel(models.Model):
 
 # ====== المشروع ======
 class Project(TimeStampedModel):
+    # Multi-Tenant: ربط المشروع بالشركة (Tenant)
+    tenant = models.ForeignKey(
+        'authentication.Tenant',
+        on_delete=models.CASCADE,
+        related_name='projects',
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="الشركة التي ينتمي إليها المشروع"
+    )
     PROJECT_TYPE_CHOICES = [
         ('villa', 'Villa'),
         ('commercial', 'Commercial'),
@@ -63,6 +85,67 @@ class Project(TimeStampedModel):
         )],
         help_text="Starts with M, digits allowed, last digit must be odd (1,3,5,7,9).",
     )
+    
+    # ====== Workflow Fields ======
+    # المرحلة الحالية في Workflow
+    current_stage = models.ForeignKey(
+        'authentication.WorkflowStage',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='projects',
+        help_text="المرحلة الحالية للمشروع في Workflow"
+    )
+    
+    # حالة الموافقة
+    approval_status = models.CharField(
+        max_length=30,
+        choices=[
+            ('draft', 'Draft'),
+            ('pending', 'Pending Approval'),
+            ('approved', 'Approved'),
+            ('rejected', 'Rejected'),
+            ('delete_requested', 'Delete Requested'),
+            ('delete_approved', 'Delete Approved'),
+        ],
+        default='draft',
+        help_text="حالة الموافقة على المشروع"
+    )
+    
+    # من طلب الحذف
+    delete_requested_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delete_requests',
+        help_text="المستخدم الذي طلب حذف المشروع"
+    )
+    delete_requested_at = models.DateTimeField(null=True, blank=True)
+    delete_reason = models.TextField(blank=True, help_text="سبب طلب الحذف")
+    
+    # من وافق على الحذف
+    delete_approved_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delete_approvals',
+        help_text="المستخدم الذي وافق على حذف المشروع"
+    )
+    delete_approved_at = models.DateTimeField(null=True, blank=True)
+    
+    # من وافق/رفض آخر مرة
+    last_approved_by = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approvals',
+        help_text="المستخدم الذي وافق/رفض آخر مرة"
+    )
+    last_approved_at = models.DateTimeField(null=True, blank=True)
+    approval_notes = models.TextField(blank=True, help_text="ملاحظات الموافقة/الرفض")
 
     def __str__(self):
         return self.name or f"Project #{self.id}"
@@ -267,7 +350,7 @@ class SitePlanOwner(TimeStampedModel):
     right_hold_type = models.CharField(max_length=120, blank=True, default="Ownership")
     share_possession = models.CharField(max_length=120, blank=True)
     share_percent = models.DecimalField(
-        max_digits=5, decimal_places=2, validators=[MinValueValidator(0), MaxValueValidator(100)], default=100
+        max_digits=5, decimal_places=2, validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))], default=100
     )
 
     def __str__(self):
@@ -432,19 +515,148 @@ class Awarding(TimeStampedModel):
         return f"Awarding for {self.project.name or self.project_id}"
 
 
+# ====== أوامر التغيير السعري (Price Change Orders) ======
+class Variation(TimeStampedModel):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="variations")
+    variation_number = models.CharField(max_length=100, blank=True, unique=True, help_text="رقم التعديل")
+    description = models.TextField(blank=True, help_text="الوصف")
+    final_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'), validators=[MinValueValidator(Decimal('0'))], help_text="المبلغ الفعلي")
+    consultant_fees_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0'), validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))], help_text="نسبة أتعاب الاستشاري (%) من المبلغ الفعلي")
+    consultant_fees = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'), validators=[MinValueValidator(Decimal('0'))], help_text="أتعاب الاستشاري (محسوبة تلقائياً من النسبة)")
+    contractor_engineer_fees = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'), validators=[MinValueValidator(Decimal('0'))], help_text="مهندس المقاول (Head and Profit) (مبلغ ثابت)")
+    total_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'), validators=[MinValueValidator(Decimal('0'))], help_text="المبلغ الإجمالي")
+    discount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'), validators=[MinValueValidator(Decimal('0'))], help_text="الخصم")
+    net_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'), validators=[MinValueValidator(Decimal('0'))], help_text="المبلغ الصافي")
+    vat = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'), validators=[MinValueValidator(Decimal('0'))], help_text="الضريبة")
+    net_amount_with_vat = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'), validators=[MinValueValidator(Decimal('0'))], help_text="المبلغ الصافي بالضريبة")
+    variation_invoice_file = models.FileField(upload_to='variations/invoices/', blank=True, null=True, help_text="فاتورة التعديل")
+    # Legacy fields (kept for backward compatibility)
+    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal('0'))], help_text="المبلغ (legacy - use final_amount)")
+    approval_date = models.DateField(null=True, blank=True)
+    approved_by = models.CharField(max_length=200, blank=True)
+    attachments = models.JSONField(default=list, blank=True, help_text="List of attachment file paths/URLs")
+
+    class Meta:
+        db_table = 'projects_variation'
+        verbose_name = 'Price Change Order'
+        verbose_name_plural = 'Price Change Orders'
+        ordering = ['-approval_date', '-created_at']
+
+    def __str__(self):
+        return f"Variation {self.variation_number or self.id} - {self.final_amount} for {self.project.name or self.project_id}"
+
+
+# ====== الفواتير ======
+class InitialInvoice(TimeStampedModel):
+    """Initial Invoice - reflects the full amount owed by the owner, including variations"""
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="initial_invoices")
+    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
+    stage = models.CharField(max_length=100, blank=True, help_text="Stage/Request identifier")
+    description = models.TextField(blank=True)
+    invoice_date = models.DateField()
+    invoice_number = models.CharField(max_length=100, blank=True, unique=True, null=True)
+    items = models.JSONField(default=list, blank=True, help_text="Invoice items: [{description, quantity, unit_price, total}]")
+
+    class Meta:
+        db_table = 'projects_initial_invoice'
+        verbose_name = 'Initial Invoice'
+        verbose_name_plural = 'Initial Invoices'
+        ordering = ['-invoice_date', '-created_at']
+
+    def __str__(self):
+        return f"Initial Invoice {self.invoice_number or self.id} - {self.amount}"
+
+
+class ActualInvoice(TimeStampedModel):
+    """Actual Invoice - reflects the actual amount paid by the owner (one per payment)"""
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="actual_invoices")
+    payment = models.OneToOneField('Payment', on_delete=models.CASCADE, related_name="actual_invoice", null=True, blank=True)
+    initial_invoice = models.ForeignKey(InitialInvoice, on_delete=models.CASCADE, related_name="actual_invoices", null=True, blank=True)
+    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
+    invoice_date = models.DateField()
+    invoice_number = models.CharField(max_length=100, blank=True, unique=True, null=True)
+    description = models.TextField(blank=True)
+    items = models.JSONField(default=list, blank=True, help_text="Invoice items: [{description, quantity, unit_price, total}]")
+
+    class Meta:
+        db_table = 'projects_actual_invoice'
+        verbose_name = 'Actual Invoice'
+        verbose_name_plural = 'Actual Invoices'
+        ordering = ['-invoice_date', '-created_at']
+
+    def __str__(self):
+        return f"Actual Invoice {self.invoice_number or self.id} - {self.amount}"
+
+
 # ====== الدفعات ======
 class Payment(TimeStampedModel):
+    PAYER_CHOICES = [
+        ('bank', 'Bank'),
+        ('owner', 'Owner'),
+    ]
+    
+    PAYMENT_METHOD_CHOICES = [
+        ('cash_deposit', 'Cash Deposit in Company Bank Account'),
+        ('cash_office', 'Cash Payment in Office'),
+        ('bank_transfer', 'Bank Transfer'),
+        ('bank_cheque', 'Bank Cheque'),
+    ]
+
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="payments", null=True, blank=True)
+    payer = models.CharField(max_length=20, choices=PAYER_CHOICES, default='owner')
+    payment_method = models.CharField(max_length=50, choices=PAYMENT_METHOD_CHOICES, blank=True)
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     date = models.DateField()
     description = models.TextField(blank=True)
+    # Bank transfer details
+    recipient_account_number = models.CharField(max_length=100, blank=True, help_text="رقم الحساب المستلم")
+    sender_account_number = models.CharField(max_length=100, blank=True, help_text="رقم الحساب الراسل (للتحويل البنكي)")
+    transferor_name = models.CharField(max_length=200, blank=True, help_text="اسم المحول (للتحويل البنكي) / اسم الراسل (للإيداع النقدي)")
+    # Bank cheque details
+    cheque_holder_name = models.CharField(max_length=200, blank=True, help_text="اسم صاحب الشيك")
+    cheque_account_number = models.CharField(max_length=100, blank=True, help_text="رقم الحساب الذي سيخضع فيه الشيك")
+    cheque_date = models.DateField(null=True, blank=True, help_text="تاريخ الشيك")
+    # Bank payment specific fields
+    project_financial_account = models.CharField(max_length=100, blank=True, help_text="رقم الحساب المالي للمشروع (يبدأ بـ PRJ)")
+    completion_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="نسبة الإنجاز")
+    bank_payment_attachments = models.FileField(upload_to='payments/bank_attachments/', blank=True, null=True, help_text="مرفقات دفعة البنك")
+    # File attachments
+    deposit_slip = models.FileField(upload_to='payments/deposit_slips/', blank=True, null=True, help_text="Deposit Slip / Bank Deposit Proof")
+    invoice_file = models.FileField(upload_to='payments/invoices/', blank=True, null=True, help_text="Invoice Used for Payment (فاتورة الدفع)")
+    receipt_voucher = models.FileField(upload_to='payments/receipts/', blank=True, null=True, help_text="Receipt Voucher (سند قبض)")
+    # Note: actual_invoice is accessed via reverse relationship: payment.actual_invoice
 
     class Meta:
         db_table = 'projects_payment'
         verbose_name = 'Payment'
         verbose_name_plural = 'Payments'
+        ordering = ['-date', '-created_at']
 
     def __str__(self):
+        payer_name = dict(self.PAYER_CHOICES).get(self.payer, self.payer)
         if self.project:
-            return f"Payment {self.amount} for {self.project.name or self.project_id} on {self.date}"
-        return f"Payment {self.amount} on {self.date}"
+            return f"{payer_name} Payment {self.amount} for {self.project.name or self.project_id} on {self.date}"
+        return f"{payer_name} Payment {self.amount} on {self.date}"
+
+    def clean(self):
+        """Validate payment method based on payer"""
+        from django.core.exceptions import ValidationError
+        
+        if self.payer == 'bank':
+            if self.payment_method != 'bank_transfer':
+                raise ValidationError({
+                    'payment_method': 'Bank payments must use Bank Transfer only.'
+                })
+        elif self.payer == 'owner':
+            if not self.payment_method:
+                raise ValidationError({
+                    'payment_method': 'Payment method is required for owner payments.'
+                })
+            if self.payment_method not in ['cash_deposit', 'cash_office', 'bank_transfer', 'bank_cheque']:
+                raise ValidationError({
+                    'payment_method': 'Invalid payment method for owner payments.'
+                })
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
