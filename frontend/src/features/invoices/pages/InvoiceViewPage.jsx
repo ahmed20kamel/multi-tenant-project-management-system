@@ -8,7 +8,7 @@ import { formatMoney, formatDate } from "../../../utils/formatters";
 import "./InvoiceViewPage.css";
 
 export default function InvoiceViewPage() {
-  const { invoiceId, type } = useParams(); // type: "initial" or "actual"
+  const { invoiceId } = useParams();
   const { t, i18n } = useTranslation();
   const isAR = /^ar\b/i.test(i18n.language || "");
   const navigate = useNavigate();
@@ -19,7 +19,7 @@ export default function InvoiceViewPage() {
 
   useEffect(() => {
     loadInvoice();
-  }, [invoiceId, type]);
+  }, [invoiceId]);
 
   const loadFullProjectData = async (projectId) => {
     try {
@@ -62,56 +62,38 @@ export default function InvoiceViewPage() {
   const loadInvoice = async () => {
     setLoading(true);
     try {
-      // First, get the invoice
-      let invoiceData;
-      if (type === "initial") {
-        // We need project ID - try to get it from invoice
-        const { data } = await api.get(`projects/`);
-        const projects = Array.isArray(data) ? data : (data?.results || data?.items || data?.data || []);
-        
-        // Try to find invoice in projects
-        for (const proj of projects) {
-          try {
-            const { data: invoices } = await api.get(`projects/${proj.id}/initial-invoices/`);
-            const invoicesList = Array.isArray(invoices) ? invoices : (invoices?.results || invoices?.items || invoices?.data || []);
-            const found = invoicesList.find(inv => inv.id === parseInt(invoiceId));
-            if (found) {
-              invoiceData = found;
-              // Load full project data with owners, consultant, contract
-              await loadFullProjectData(proj.id);
-              break;
-            }
-          } catch (e) {
-            // Continue
+      // Load actual invoices only
+      let invoiceData = null;
+      let projectId = null;
+      
+      const { data } = await api.get(`projects/`);
+      const projects = Array.isArray(data) ? data : (data?.results || data?.items || data?.data || []);
+      
+      // Search for invoice in all projects
+      for (const proj of projects) {
+        try {
+          const { data: invoices } = await api.get(`projects/${proj.id}/actual-invoices/`);
+          const invoicesList = Array.isArray(invoices) ? invoices : (invoices?.results || invoices?.items || invoices?.data || []);
+          const found = invoicesList.find(inv => inv.id === parseInt(invoiceId));
+          if (found) {
+            invoiceData = found;
+            projectId = proj.id;
+            break;
           }
-        }
-      } else {
-        // Similar for actual invoices
-        const { data } = await api.get(`projects/`);
-        const projects = Array.isArray(data) ? data : (data?.results || data?.items || data?.data || []);
-        
-        for (const proj of projects) {
-          try {
-            const { data: invoices } = await api.get(`projects/${proj.id}/actual-invoices/`);
-            const invoicesList = Array.isArray(invoices) ? invoices : (invoices?.results || invoices?.items || invoices?.data || []);
-            const found = invoicesList.find(inv => inv.id === parseInt(invoiceId));
-            if (found) {
-              invoiceData = found;
-              // Load full project data with owners, consultant, contract
-              await loadFullProjectData(proj.id);
-              break;
-            }
-          } catch (e) {
-            // Continue
-          }
+        } catch (e) {
+          // Continue searching in other projects
+          continue;
         }
       }
 
-      if (!invoiceData) {
-        alert(t("invoice_not_found") || "Invoice not found");
+      if (!invoiceData || !projectId) {
+        alert(t("invoice_not_found"));
         navigate("/invoices");
         return;
       }
+
+      // Load full project data with owners, consultant, contract
+      await loadFullProjectData(projectId);
 
       setInvoice(invoiceData);
 
@@ -167,7 +149,7 @@ export default function InvoiceViewPage() {
       }
     } catch (e) {
       console.error("Error loading invoice:", e);
-      alert(t("load_error") || "Error loading invoice");
+      alert(t("error_loading_invoice"));
       navigate("/invoices");
     } finally {
       setLoading(false);
@@ -188,7 +170,6 @@ export default function InvoiceViewPage() {
         invoice={invoice}
         project={project}
         company={company}
-        type={type}
         onClose={() => navigate("/invoices")}
       />
     </PageLayout>

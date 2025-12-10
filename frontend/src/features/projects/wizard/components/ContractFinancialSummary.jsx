@@ -186,6 +186,9 @@ export default function ContractFinancialSummary({ projectId }) {
 
   // تفكيك القيم المحسوبة
   const { grossTotal, grossBank, grossOwner, ownerPct, bankPct, totalPct, total, bank, owner, payableAmount, A, vat, inc } = computed.data;
+  
+  // ✅ تحديد نوع التمويل
+  const isPrivateFunding = contract?.contract_classification === "private_funding";
 
   /* ===== ستايل متناسق مع النظام ===== */
   const S = {
@@ -331,7 +334,7 @@ export default function ContractFinancialSummary({ projectId }) {
   return (
       <div className="card" style={{ overflowX: "auto" }}>
       {/* ثلاث بطاقات جديدة - إجمالي مبلغ العقد، المبلغ الفعلي، مبلغ الاستحقاق */}
-      <div style={S.tablesGrid}>
+      <div style={{ ...S.tablesGrid, gridTemplateColumns: isPrivateFunding ? "repeat(2, 1fr)" : "repeat(3, 1fr)" }}>
       {/* ① إجمالي مبلغ العقد (شامل الضريبة / غير شامل / VAT) */}
         <div style={S.tableWrapper}>
           <div style={S.sectionTitle}>
@@ -442,7 +445,7 @@ export default function ContractFinancialSummary({ projectId }) {
       </div>
 
       {/* أول 3 جداول في صف واحد */}
-      <div style={S.tablesGrid}>
+      <div style={{ ...S.tablesGrid, gridTemplateColumns: isPrivateFunding ? "repeat(2, 1fr)" : "repeat(3, 1fr)" }}>
       {/* ① إجمالي مبالغ العقد */}
         <div style={S.tableWrapper}>
           <div style={S.sectionTitle}>
@@ -487,7 +490,8 @@ export default function ContractFinancialSummary({ projectId }) {
       </table>
         </div>
 
-      {/* ② بنك */}
+      {/* ② بنك - ✅ إخفاء عند تمويل المالك فقط */}
+      {!isPrivateFunding && (
         <div style={S.tableWrapper}>
           <div style={S.sectionTitle}>
         {t("contract_bank_share_title")}
@@ -530,6 +534,7 @@ export default function ContractFinancialSummary({ projectId }) {
         </tbody>
       </table>
         </div>
+      )}
 
       {/* ③ مالك */}
         <div style={S.tableWrapper}>
@@ -594,13 +599,14 @@ export default function ContractFinancialSummary({ projectId }) {
           </tr>
         </thead>
         <tbody>
-          {RowVAT(t("contract_total_bank_financing"), grossBank)}
+          {/* ✅ إخفاء صفوف البنك عند تمويل المالك فقط */}
+          {!isPrivateFunding && RowVAT(t("contract_total_bank_financing"), grossBank)}
           {RowVAT(t("contract_total_owner_financing"), grossOwner)}
           {RowVAT(t("contract_total_contract_amount"), grossTotal, true)}
-          {RowVAT(t("contract_consultant_fees_bank"), bank.fee)}
+          {!isPrivateFunding && RowVAT(t("contract_consultant_fees_bank"), bank.fee)}
           {RowVAT(t("contract_consultant_fees_owner"), owner.fee)}
           {RowVAT(t("contract_total_consultant_fees"), total.fee, true)}
-          {RowVAT(t("contract_contractor_from_bank"), bank.net)}
+          {!isPrivateFunding && RowVAT(t("contract_contractor_from_bank"), bank.net)}
           {RowVAT(t("contract_contractor_from_owner"), owner.net)}
           {RowVAT(t("contract_total_actual_contractor"), total.net, true)}
         </tbody>

@@ -17,9 +17,9 @@ export default function CreateActualInvoicePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [projects, setProjects] = useState([]);
-  const [allInvoices, setAllInvoices] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [formData, setFormData] = useState({
-    initial_invoice: "",
+    project: "",
     payment: "",
     amount: "0.00",
     invoice_date: new Date().toISOString().split("T")[0],
@@ -42,20 +42,10 @@ export default function CreateActualInvoicePage() {
       const projectsList = Array.isArray(projectsData) ? projectsData : (projectsData?.results || []);
       setProjects(projectsList || []);
 
-      // Load all initial invoices
-      const invoicesPromises = [];
-      for (const project of projectsList) {
-        invoicesPromises.push(
-          api.get(`projects/${project.id}/initial-invoices/`).then(res => {
-            const items = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-            return items.map(inv => ({ ...inv, __type: 'initial', __project: project }));
-          }).catch(() => [])
-        );
-      }
-      
-      const invoicesArrays = await Promise.all(invoicesPromises);
-      const allInvoicesFlat = invoicesArrays.flat();
-      setAllInvoices(allInvoicesFlat);
+      // Load all payments
+      const { data: paymentsData } = await api.get("payments/");
+      const paymentsList = Array.isArray(paymentsData) ? paymentsData : (paymentsData?.results || paymentsData?.items || paymentsData?.data || []);
+      setPayments(paymentsList || []);
     } catch (e) {
       console.error("Error loading data:", e);
     } finally {
@@ -88,7 +78,7 @@ export default function CreateActualInvoicePage() {
       }
 
       if (!invoice || !projectId) {
-        alert(t("invoice_not_found") || "Invoice not found");
+        alert(t("invoice_not_found"));
         navigate("/invoices");
         return;
       }
@@ -97,8 +87,14 @@ export default function CreateActualInvoicePage() {
         ? invoice.items 
         : [{ description: "", quantity: 1, unit_price: 0, total: 0 }];
 
+      // Load payments for the project
+      const { data: paymentsData } = await api.get("payments/");
+      const paymentsList = Array.isArray(paymentsData) ? paymentsData : (paymentsData?.results || paymentsData?.items || paymentsData?.data || []);
+      const projectPayments = paymentsList.filter(p => p.project?.toString() === projectId.toString());
+      setPayments(projectPayments);
+
       setFormData({
-        initial_invoice: invoice.initial_invoice?.toString() || "",
+        project: projectId.toString(),
         payment: invoice.payment_id?.toString() || "",
         amount: invoice.amount || "0.00",
         invoice_date: invoice.invoice_date ? invoice.invoice_date.split("T")[0] : "",
@@ -108,7 +104,7 @@ export default function CreateActualInvoicePage() {
       });
     } catch (e) {
       console.error("Error loading invoice:", e);
-      alert(t("error_loading_invoice") || "Error loading invoice");
+      alert(t("error_loading_invoice"));
       navigate("/invoices");
     } finally {
       setLoading(false);
@@ -152,8 +148,8 @@ export default function CreateActualInvoicePage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.initial_invoice || !formData.invoice_date) {
-      alert(t("fill_required_fields") || "Please fill required fields");
+    if (!formData.project || !formData.invoice_date) {
+      alert(t("fill_required_fields"));
       return;
     }
 
@@ -164,23 +160,15 @@ export default function CreateActualInvoicePage() {
     );
 
     if (validItems.length === 0) {
-      alert(t("add_at_least_one_item") || "Please add at least one valid item");
+      alert(t("add_at_least_one_item"));
       return;
     }
 
     setSaving(true);
     try {
-      const initialInvoice = allInvoices.find(inv => inv.id === parseInt(formData.initial_invoice) && inv.__type === 'initial');
-      if (!initialInvoice || !initialInvoice.project) {
-        alert(t("error") || "Error: Initial invoice not found");
-        setSaving(false);
-        return;
-      }
-
       const totalAmount = calculateTotalFromItems(validItems);
       const payload = {
-        project: initialInvoice.project,
-        initial_invoice: parseInt(formData.initial_invoice),
+        project: parseInt(formData.project),
         payment: formData.payment ? parseInt(formData.payment) : null,
         amount: totalAmount,
         invoice_date: formData.invoice_date,
@@ -190,24 +178,19 @@ export default function CreateActualInvoicePage() {
       };
 
       if (isEditMode) {
-        await api.patch(`projects/${initialInvoice.project}/actual-invoices/${invoiceId}/`, payload);
+        await api.patch(`projects/${formData.project}/actual-invoices/${invoiceId}/`, payload);
       } else {
-        await api.post(`projects/${initialInvoice.project}/actual-invoices/`, payload);
+        await api.post(`projects/${formData.project}/actual-invoices/`, payload);
       }
 
       navigate("/invoices");
     } catch (e) {
       console.error("Error saving invoice:", e);
-      alert(e?.response?.data?.detail || t("save_error") || "Error saving invoice");
+      alert(e?.response?.data?.detail || t("save_error"));
     } finally {
       setSaving(false);
     }
   };
-
-  const selectedInitialInvoice = allInvoices.find(inv => inv.id === parseInt(formData.initial_invoice) && inv.__type === 'initial');
-  const remainingBalance = selectedInitialInvoice 
-    ? (selectedInitialInvoice.remaining_balance || selectedInitialInvoice.amount) 
-    : null;
 
   return (
     <PageLayout loading={loading} loadingText={t("loading")}>
@@ -218,49 +201,65 @@ export default function CreateActualInvoicePage() {
             onClick={() => navigate("/invoices")}
             style={{ marginBottom: "16px" }}
           >
-            ← {t("back") || "Back"} {t("to_invoices") || "to Invoices"}
+            ← {t("back")} {t("to_invoices")}
           </Button>
           <h1 className="create-invoice-title">
-            {isEditMode ? (t("edit_actual_invoice") || "Edit Actual Invoice") : (t("add_actual_invoice") || "Add Actual Invoice")}
+            {isEditMode ? t("edit_invoice") : t("add_invoice")}
           </h1>
         </div>
 
         <form onSubmit={handleSubmit} className="create-invoice-form">
-          {/* Initial Invoice Selection */}
+          {/* Invoice Details */}
           <div className="invoice-form-card">
             <div className="invoice-form-card-header">
-              {t("invoice_details") || "تفاصيل الفاتورة"}
+              {t("invoice_details")}
             </div>
             <div className="invoice-form-card-body">
-              <div className="form-field">
-                <label className="form-label">
-                  {t("initial_invoice") || "الفاتورة المبدئية"} *
-                </label>
-                <UnifiedSelect
-                  options={allInvoices.filter(inv => inv.__type === 'initial')}
-                  value={formData.initial_invoice}
-                  onChange={(invoiceId) => setFormData({ ...formData, initial_invoice: invoiceId })}
-                  placeholder={t("select_initial_invoice") || "اختر الفاتورة المبدئية"}
-                  isDisabled={isEditMode}
-                  getOptionLabel={(opt) => {
-                    const label = `${opt.invoice_number || `Invoice #${opt.id}`} - ${formatMoney(opt.amount)}`;
-                    return opt.remaining_balance > 0 
-                      ? `${label} (${t("remaining")}: ${formatMoney(opt.remaining_balance)})`
-                      : label;
-                  }}
-                  getOptionValue={(opt) => opt.id?.toString()}
-                />
-                {remainingBalance !== null && (
-                  <small className="form-hint" style={{ color: "var(--primary)", fontWeight: 600 }}>
-                    {t("remaining_balance") || "المبلغ المتبقي"}: {formatMoney(remainingBalance)}
-                  </small>
-                )}
+              <div className="form-row">
+                <div className="form-field">
+                  <label className="form-label">
+                    {t("project_name")} *
+                  </label>
+                  <UnifiedSelect
+                    options={projects}
+                    value={formData.project}
+                    onChange={(projectId) => {
+                      setFormData({ ...formData, project: projectId });
+                      // تحديث قائمة الدفعات عند اختيار مشروع
+                      if (projectId) {
+                        const projectPayments = payments.filter(p => p.project?.toString() === projectId.toString());
+                        setPayments(projectPayments);
+                      }
+                    }}
+                    placeholder={t("select_project")}
+                    isDisabled={isEditMode}
+                    getOptionLabel={(opt) => opt.display_name || opt.name || `${t("project")} #${opt.id}`}
+                    getOptionValue={(opt) => opt.id?.toString()}
+                  />
+                </div>
+                <div className="form-field">
+                  <label className="form-label">
+                    {t("linked_payment")}
+                  </label>
+                  <UnifiedSelect
+                    options={payments.filter(p => !formData.project || p.project?.toString() === formData.project.toString())}
+                    value={formData.payment}
+                    onChange={(paymentId) => setFormData({ ...formData, payment: paymentId })}
+                    placeholder={t("select_payment")}
+                    isClearable
+                    getOptionLabel={(opt) => {
+                      const date = opt.date ? new Date(opt.date).toLocaleDateString('ar-EG') : '';
+                      return `${formatMoney(opt.amount)} - ${date}`;
+                    }}
+                    getOptionValue={(opt) => opt.id?.toString()}
+                  />
+                </div>
               </div>
 
               <div className="form-row">
                 <div className="form-field">
                   <label className="form-label">
-                    {t("invoice_date") || "تاريخ الفاتورة"} *
+                    {t("invoice_date")} *
                   </label>
                   <input
                     type="date"
@@ -272,28 +271,28 @@ export default function CreateActualInvoicePage() {
                 </div>
                 <div className="form-field">
                   <label className="form-label">
-                    {t("invoice_number") || "رقم الفاتورة"}
+                    {t("invoice_number")}
                   </label>
                   <input
                     type="text"
                     className="prj-input"
                     value={formData.invoice_number}
                     onChange={(e) => setFormData({ ...formData, invoice_number: e.target.value })}
-                    placeholder={t("invoice_number_placeholder") || "سيتم توليده تلقائياً إذا تركت فارغاً"}
+                    placeholder={t("invoice_number_placeholder")}
                   />
                 </div>
               </div>
 
               <div className="form-field">
                 <label className="form-label">
-                  {t("description") || "الوصف"}
+                  {t("description")}
                 </label>
                 <textarea
                   className="prj-input"
                   rows={3}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder={t("description_placeholder") || "أدخل وصف الفاتورة"}
+                  placeholder={t("description_placeholder")}
                 />
               </div>
             </div>
@@ -302,27 +301,27 @@ export default function CreateActualInvoicePage() {
           {/* Invoice Items */}
           <div className="invoice-form-card">
             <div className="invoice-form-card-header">
-              <span>{t("invoice_items") || "أصناف الفاتورة"} *</span>
+              <span>{t("invoice_items")} *</span>
               <Button 
                 variant="secondary" 
                 size="small" 
                 onClick={addInvoiceItem}
                 type="button"
               >
-                + {t("add_item") || "إضافة صنف"}
+                + {t("add_item")}
               </Button>
             </div>
             <div className="invoice-form-card-body">
               {(formData.items || []).length === 0 ? (
                 <div className="empty-items-state">
-                  <p>{t("no_items_added") || "لم يتم إضافة أي أصناف بعد"}</p>
+                  <p>{t("no_items_added")}</p>
                   <Button 
                     variant="secondary" 
                     size="small" 
                     onClick={addInvoiceItem}
                     type="button"
                   >
-                    {t("add_first_item") || "إضافة أول صنف"}
+                    {t("add_first_item")}
                   </Button>
                 </div>
               ) : (
@@ -330,10 +329,10 @@ export default function CreateActualInvoicePage() {
                   <table className="invoice-items-table">
                     <thead>
                       <tr>
-                        <th>{t("item_description") || "الوصف"}</th>
-                        <th style={{ width: "120px" }}>{t("quantity") || "الكمية"}</th>
-                        <th style={{ width: "150px" }}>{t("unit_price") || "سعر الوحدة"}</th>
-                        <th style={{ width: "150px" }}>{t("total") || "الإجمالي"}</th>
+                        <th>{t("item_description")}</th>
+                        <th style={{ width: "120px" }}>{t("quantity")}</th>
+                        <th style={{ width: "150px" }}>{t("unit_price")}</th>
+                        <th style={{ width: "150px" }}>{t("total")}</th>
                         <th style={{ width: "60px" }}></th>
                       </tr>
                     </thead>
@@ -346,7 +345,7 @@ export default function CreateActualInvoicePage() {
                               className="prj-input"
                               value={item.description || ""}
                               onChange={(e) => updateInvoiceItem(index, 'description', e.target.value)}
-                              placeholder={t("item_description_placeholder") || "وصف الصنف..."}
+                              placeholder={t("item_description_placeholder")}
                             />
                           </td>
                           <td>
@@ -380,7 +379,7 @@ export default function CreateActualInvoicePage() {
                                 type="button"
                                 onClick={() => removeInvoiceItem(index)}
                                 className="remove-item-btn"
-                                title={t("remove_item") || "حذف"}
+                                title={t("remove_item")}
                               >
                                 ×
                               </button>
@@ -392,7 +391,7 @@ export default function CreateActualInvoicePage() {
                     <tfoot>
                       <tr>
                         <td colSpan={3} className="total-label">
-                          {t("total_amount") || "المبلغ الإجمالي"}:
+                          {t("total_amount")}:
                         </td>
                         <td className="total-amount">
                           {formatMoney(formData.amount || 0)}
@@ -414,14 +413,14 @@ export default function CreateActualInvoicePage() {
               onClick={() => navigate("/invoices")}
               disabled={saving}
             >
-              {t("cancel") || "إلغاء"}
+              {t("cancel")}
             </Button>
             <Button
               type="submit"
               variant="primary"
               disabled={saving}
             >
-              {saving ? (t("saving") || "جاري الحفظ...") : (t("save") || "حفظ")}
+              {saving ? t("saving") : t("save")}
             </Button>
           </div>
         </form>

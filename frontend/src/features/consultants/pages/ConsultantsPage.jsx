@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../services/api";
 import PageLayout from "../../../components/layout/PageLayout";
 import Button from "../../../components/common/Button";
+import Dialog from "../../../components/common/Dialog";
 
 export default function ConsultantsPage() {
   const { t, i18n } = useTranslation();
@@ -11,10 +12,29 @@ export default function ConsultantsPage() {
   const navigate = useNavigate();
   const [consultants, setConsultants] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
+  
+  // حذف فردي
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [targetConsultant, setTargetConsultant] = useState(null);
+  const [deletingKey, setDeletingKey] = useState(null);
+
+  // تحديد متعدد + حذف جماعي
+  const [selectedKeys, setSelectedKeys] = useState(new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  // Toast بسيط
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+
+  // ===== فلاتر منظّمة =====
+  const [filters, setFilters] = useState({
+    q: "",
+  });
 
   useEffect(() => {
     loadConsultants();
+    return () => clearTimeout(toastTimer.current);
   }, []);
 
   const loadConsultants = async () => {
@@ -115,23 +135,105 @@ export default function ConsultantsPage() {
         a.name.localeCompare(b.name, isAR ? "ar" : "en")
       );
 
-      setConsultants(consultantsList);
+      // إضافة key فريد لكل استشاري
+      const consultantsWithKey = consultantsList.map((c) => ({
+        ...c,
+        __key: `${c.name.toLowerCase().trim()}_${c.licenseNo || ""}_${c.type}`,
+      }));
+
+      setConsultants(consultantsWithKey);
     } catch (e) {
       console.error("Error loading consultants:", e);
       setConsultants([]);
+      showToast("error", t("load_error") || "Error loading consultants");
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredConsultants = consultants.filter((consultant) => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      consultant.name.toLowerCase().includes(query) ||
-      consultant.licenseNo?.toLowerCase().includes(query)
-    );
-  });
+  const showToast = (type, msg) => {
+    setToast({ type, msg });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
+  };
+
+  const filteredConsultants = useMemo(() => {
+    const q = filters.q.trim().toLowerCase();
+    return consultants.filter((consultant) => {
+      if (!q) return true;
+      return (
+        consultant.name.toLowerCase().includes(q) ||
+        consultant.licenseNo?.toLowerCase().includes(q)
+      );
+    });
+  }, [consultants, filters]);
+
+  const isAllSelected =
+    filteredConsultants.length > 0 && filteredConsultants.every((c) => selectedKeys.has(c.__key));
+
+  const toggleSelect = (key) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedKeys((prev) => {
+      if (isAllSelected) return new Set();
+      return new Set(filteredConsultants.map((c) => c.__key));
+    });
+  };
+
+  const askDelete = (consultant) => {
+    setTargetConsultant({ key: consultant.__key, name: consultant.name });
+    setConfirmOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!targetConsultant?.key) return;
+    const key = targetConsultant.key;
+    try {
+      setDeletingKey(key);
+      // حذف من القائمة المحلية (consultants مشتقة من projects)
+      setConsultants((prev) => prev.filter((c) => c.__key !== key));
+      setSelectedKeys((prev) => {
+        const n = new Set(prev);
+        n.delete(key);
+        return n;
+      });
+      showToast("success", t("delete_success") || "Consultant removed from list");
+      setConfirmOpen(false);
+      setTargetConsultant(null);
+    } catch (e) {
+      console.error("Delete failed:", e);
+      showToast("error", t("delete_error") || "Error deleting consultant");
+    } finally {
+      setDeletingKey(null);
+    }
+  };
+
+  const askBulkDelete = () => {
+    if (selectedKeys.size === 0) return;
+    setBulkConfirmOpen(true);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedKeys.size === 0) return;
+    setBulkDeleting(true);
+    const keys = Array.from(selectedKeys);
+    setConsultants((prev) => prev.filter((c) => !selectedKeys.has(c.__key)));
+    setSelectedKeys(new Set());
+    setBulkDeleting(false);
+    setBulkConfirmOpen(false);
+    showToast("success", t("bulk_delete_success")?.replace("{{count}}", keys.length) || `Removed ${keys.length} consultants from list`);
+  };
+
+  const selectedCount = selectedKeys.size;
+
+  const clearFilters = () => setFilters({ q: "" });
 
   const handleConsultantClick = (consultant) => {
     navigate(`/consultants/${encodeURIComponent(consultant.name)}`, { 
@@ -141,46 +243,89 @@ export default function ConsultantsPage() {
 
   return (
     <PageLayout loading={loading} loadingText={t("loading")}>
-      <div className="container">
-        <div className="card">
-          <div className="prj-header">
-            <h1 className="prj-title">{t("consultants")}</h1>
+      <div className="list-page">
+        <div className="list-header">
+          <div>
+            <h1 className="list-title">{t("consultants")}</h1>
             <p className="prj-subtitle">{t("consultants_page_subtitle")}</p>
           </div>
+        </div>
 
-          <div className="mb-12">
-            <input
-              type="text"
-              className="input"
-              placeholder={t("search_consultants")}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ maxWidth: "400px" }}
+        {/* شريط الفلاتر */}
+        <div className="prj-filters">
+          <div className="prj-filters__grid">
+            <input 
+              className="prj-input" 
+              placeholder={t("search_consultants")} 
+              value={filters.q}
+              onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} 
             />
           </div>
 
-          {filteredConsultants.length === 0 ? (
-            <div className="card text-center" style={{ padding: "40px" }}>
-              <p className="prj-muted">
-                {searchQuery ? t("no_consultants_match_search") : t("no_consultants_found")}
-              </p>
+          <div className="prj-filters__actions">
+            <Button variant="ghost" onClick={clearFilters}>
+              {t("clear_filters")}
+            </Button>
+          </div>
+        </div>
+
+        {/* شريط إجراءات عند وجود تحديد */}
+        {selectedCount > 0 && (
+          <div className="prj-bulkbar">
+            <div className="prj-bulkbar__info">
+              {t("selected")} <strong>{selectedCount}</strong>
             </div>
-          ) : (
-            <div className="prj-table__wrapper">
-              <table className="prj-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>{t("consultant_name")}</th>
-                    <th>{t("license_number")}</th>
-                    <th>{t("type")}</th>
-                    <th>{t("projects_count")}</th>
-                    <th>{t("action")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredConsultants.map((consultant, idx) => (
-                    <tr key={idx}>
+            <div className="prj-bulkbar__actions">
+              <Button variant="danger" onClick={askBulkDelete}>
+                {t("delete_selected")}
+              </Button>
+              <Button variant="ghost" onClick={() => setSelectedKeys(new Set())}>
+                {t("clear_selection")}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {filteredConsultants.length === 0 ? (
+          <div className="prj-alert">
+            <div className="prj-alert__title">
+              {filters.q ? t("no_consultants_match_search") : t("no_consultants_found")}
+            </div>
+          </div>
+        ) : (
+          <div className="prj-table__wrapper">
+            <table className="prj-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 50 }} className="text-center">
+                    <input 
+                      type="checkbox" 
+                      aria-label={t("select_all")} 
+                      checked={isAllSelected} 
+                      onChange={toggleSelectAll} 
+                    />
+                  </th>
+                  <th>#</th>
+                  <th>{t("consultant_name")}</th>
+                  <th>{t("license_number")}</th>
+                  <th>{t("type")}</th>
+                  <th>{t("projects_count")}</th>
+                  <th style={{ minWidth: "200px" }}>{t("action")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredConsultants.map((consultant, idx) => {
+                  const checked = selectedKeys.has(consultant.__key);
+                  return (
+                    <tr key={consultant.__key}>
+                      <td className="text-center">
+                        <input 
+                          type="checkbox" 
+                          aria-label={`${t("select")} ${consultant.name}`} 
+                          checked={checked} 
+                          onChange={() => toggleSelect(consultant.__key)} 
+                        />
+                      </td>
                       <td className="prj-muted">{idx + 1}</td>
                       <td>
                         <div style={{ fontWeight: 500 }}>{consultant.name}</div>
@@ -204,23 +349,86 @@ export default function ConsultantsPage() {
                           onClick={() => handleConsultantClick(consultant)}
                           className="prj-btn prj-btn--primary"
                         >
-                          {t("view_details")}
+                          {t("view")}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => navigate(`/consultants/${encodeURIComponent(consultant.name)}/edit`, { state: { consultantData: consultant } })}
+                          className="prj-btn prj-btn--secondary"
+                        >
+                          {t("edit")}
+                        </Button>
+                        <Button
+                          variant="danger"
+                          onClick={() => askDelete(consultant)}
+                          className="prj-btn prj-btn--danger"
+                          disabled={deletingKey === consultant.__key}
+                        >
+                          {deletingKey === consultant.__key ? t("deleting") : t("delete")}
                         </Button>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={6} className="prj-foot prj-muted">
-                      {t("total_consultants", { count: filteredConsultants.length, total: consultants.length })}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </div>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={7} className="prj-foot prj-muted">
+                    {t("total")}: {filteredConsultants.length} / {consultants.length} {t("consultants")}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+
+        {/* Toast */}
+        {toast && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: "24px",
+              [isAR ? "left" : "right"]: "24px",
+              padding: "12px 24px",
+              backgroundColor: toast.type === "success" ? "#10b981" : "#ef4444",
+              color: "white",
+              borderRadius: "8px",
+              boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+              zIndex: 10000,
+            }}
+          >
+            {toast.msg}
+          </div>
+        )}
+
+        {/* Delete Confirm Dialog */}
+        <Dialog
+          open={confirmOpen}
+          title={t("confirm_delete")}
+          desc={t("confirm_delete_consultant") || `Are you sure you want to remove ${targetConsultant?.name} from the list?`}
+          confirmLabel={t("delete")}
+          cancelLabel={t("cancel")}
+          onClose={() => setConfirmOpen(false)}
+          onConfirm={handleDelete}
+          danger
+        />
+
+        {/* Bulk Delete Confirm Dialog */}
+        <Dialog
+          open={bulkConfirmOpen}
+          title={t("bulk_delete")}
+          desc={
+            <>
+              {t("bulk_delete_desc")} <strong>{selectedCount}</strong> {t("consultants")}. {t("bulk_delete_continue")}
+            </>
+          }
+          confirmLabel={t("delete_confirm")}
+          cancelLabel={t("cancel")}
+          onClose={() => setBulkConfirmOpen(false)}
+          onConfirm={handleBulkDelete}
+          danger
+          busy={bulkDeleting}
+        />
       </div>
     </PageLayout>
   );

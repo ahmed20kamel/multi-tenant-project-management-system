@@ -172,14 +172,24 @@ export default function ProjectsPage() {
   const getCompletionStatus = (p) => {
     const hasSiteplan = !!p?.has_siteplan;
     const hasLicense = !!p?.has_license;
-    const hasContract = !!p?.contract_type;
+    // ✅ Contract stage is complete only if an actual Contract record exists with essential data
+    // contract_type is from Project Setup, not the Contract stage
+    // We check for essential fields: contract_type, contract_date, and total_project_value > 0
+    const contractData = p?.__contract_data;
+    const hasContract = !!contractData && !!contractData?.id && 
+      !!contractData?.contract_type && 
+      !!contractData?.contract_date && 
+      (parseFloat(contractData?.total_project_value || 0) > 0);
     const hasAwarding = !!p?.__has_awarding;
+    const contractClassification = contractData?.contract_classification;
+    const isHousingLoan = contractClassification === "housing_loan_program";
 
     const missing = [];
     if (!hasSiteplan) missing.push(t("stage_siteplan"));
     if (!hasLicense) missing.push(t("stage_license"));
     if (!hasContract) missing.push(t("stage_contract"));
-    if (!hasAwarding) missing.push(t("stage_awarding"));
+    // أمر الترسية مطلوب فقط لبرنامج القرض السكني
+    if (isHousingLoan && !hasAwarding) missing.push(t("stage_awarding"));
 
     if (missing.length === 0) {
       return t("completion_completed");
@@ -648,11 +658,11 @@ export default function ProjectsPage() {
                       </td>
 
                       <td className="prj-actions">
-                        <Button as={Link} variant="primary" to={`/projects/${p?.id}/wizard`} className="prj-btn prj-btn--primary">
-                          {t("edit")}
-                        </Button>
-                        <Button as={Link} variant="ghost" to={`/projects/${p?.id}`} className="prj-btn prj-btn--ghost">
+                        <Button as={Link} variant="primary" to={`/projects/${p?.id}`} className="prj-btn prj-btn--primary">
                           {t("view")}
+                        </Button>
+                        <Button as={Link} variant="secondary" to={`/projects/${p?.id}/wizard`} className="prj-btn prj-btn--secondary">
+                          {t("edit")}
                         </Button>
                         <Button 
                           variant="danger" 

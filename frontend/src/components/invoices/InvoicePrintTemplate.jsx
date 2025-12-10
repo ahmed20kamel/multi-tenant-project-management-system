@@ -13,28 +13,18 @@ export default function InvoicePrintTemplate({
   invoice,
   project,
   company,
-  type = "initial", // "initial" or "actual"
   onClose,
 }) {
   const { t, i18n } = useTranslation();
   const [printLanguage, setPrintLanguage] = useState(i18n.language || "ar");
 
   const isRTL = printLanguage === "ar";
-  const isInitial = type === "initial";
 
   // Calculate amounts
   const subtotal = parseFloat(invoice.amount || 0);
   const vatRate = 0.05; // 5%
   const vatAmount = subtotal * vatRate;
   const grandTotal = subtotal + vatAmount;
-
-  // Get remaining balance for initial invoices
-  const remainingBalance = isInitial && invoice.remaining_balance !== undefined
-    ? parseFloat(invoice.remaining_balance || 0)
-    : null;
-  const paidAmount = isInitial && remainingBalance !== null
-    ? subtotal - remainingBalance
-    : null;
 
   // Format amount in words (basic implementation)
   const amountInWords = (amount) => {
@@ -61,7 +51,7 @@ export default function InvoicePrintTemplate({
         </div>
         <div className="print-controls-center">
           <label style={{ marginRight: "12px", fontWeight: 500 }}>
-            {t("print_language") || "Print Language"}:
+            {t("print_language")}:
           </label>
           <select
             value={printLanguage}
@@ -69,13 +59,13 @@ export default function InvoicePrintTemplate({
             className="prj-select"
             style={{ minWidth: "120px" }}
           >
-            <option value="ar">{t("arabic") || "Arabic"}</option>
-            <option value="en">{t("english") || "English"}</option>
+            <option value="ar">{t("arabic")}</option>
+            <option value="en">{t("english")}</option>
           </select>
         </div>
         <div className="print-controls-right">
           <Button variant="primary" onClick={handlePrint}>
-            🖨️ {t("print") || "Print"}
+            🖨️ {t("print")}
           </Button>
         </div>
       </div>
@@ -141,10 +131,7 @@ export default function InvoicePrintTemplate({
           </div>
           <div className="invoice-print-title-section">
             <h2 className="invoice-print-title">
-              {isInitial 
-                ? (isRTL ? "الفاتورة المبدئية" : "Initial Invoice")
-                : (isRTL ? "الفاتورة الفعلية" : "Actual Invoice")
-              }
+              {isRTL ? "الفاتورة" : "Invoice"}
             </h2>
             <div className="invoice-print-meta">
               <div className="invoice-print-meta-item">
@@ -186,7 +173,7 @@ export default function InvoicePrintTemplate({
                 {isRTL ? "اسم المشروع" : "Project Name"}:
               </span>
               <span className="invoice-print-info-value">
-                {project?.display_name || project?.name || `Project #${project?.id}`}
+                {project?.display_name || project?.name || `${isRTL ? "مشروع" : "Project"} #${project?.id}`}
               </span>
             </div>
             {project?.plot_number && (
@@ -247,11 +234,7 @@ export default function InvoicePrintTemplate({
               <tr>
                 <td className="col-number">1</td>
                 <td className="col-description">
-                  {invoice.description || 
-                   (isInitial 
-                     ? (isRTL ? "مبلغ الفاتورة المبدئية" : "Initial Invoice Amount")
-                     : (isRTL ? "مبلغ الفاتورة الفعلية" : "Actual Invoice Amount")
-                   )}
+                  {invoice.description || (isRTL ? "مبلغ الفاتورة" : "Invoice Amount")}
                   {invoice.stage && (
                     <div className="invoice-print-stage-note">
                       {isRTL ? "المرحلة" : "Stage"}: {invoice.stage}
@@ -269,17 +252,7 @@ export default function InvoicePrintTemplate({
         {/* Amount Summary */}
         <div className="invoice-print-summary">
           <div className="invoice-print-summary-left">
-            {isInitial && paidAmount !== null && (
-              <div className="invoice-print-summary-note">
-                <strong>{isRTL ? "المبلغ المدفوع" : "Paid Amount"}:</strong> {formatMoney(paidAmount)}
-              </div>
-            )}
-            {isInitial && remainingBalance !== null && remainingBalance > 0 && (
-              <div className="invoice-print-summary-note" style={{ color: "#f59e0b" }}>
-                <strong>{isRTL ? "الرصيد المتبقي" : "Remaining Balance"}:</strong> {formatMoney(remainingBalance)}
-              </div>
-            )}
-            {!isInitial && invoice.payment_id && (
+            {invoice.payment_id && (
               <div className="invoice-print-summary-note">
                 <strong>{isRTL ? "رقم الدفعة" : "Payment Reference"}:</strong> #{invoice.payment_id}
               </div>

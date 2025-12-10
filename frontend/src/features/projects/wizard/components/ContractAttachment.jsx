@@ -9,7 +9,6 @@ import Button from "../../../../components/common/Button";
 import { extractFileNameFromUrl } from "../../../../utils/fileHelpers";
 
 const ATTACHMENT_TYPES = [
-  { value: "main_contract", label: "عقد أصيل" },
   { value: "appendix", label: "ملحق عقد" },
   { value: "explanation", label: "توضيح تعاقدي" },
   { value: "bank_contract", label: "عقد بنك" },
@@ -24,8 +23,18 @@ export default function ContractAttachment({
   onRemove,
   canRemove,
   projectId,
+  isPrivateFunding = false, // ✅ نوع التمويل: إذا كان true، نخفي "عقد بنك"
 }) {
   const { t } = useTranslation();
+
+  // ✅ تصفية أنواع المرفقات بناءً على نوع التمويل
+  const availableAttachmentTypes = ATTACHMENT_TYPES.filter((type) => {
+    // ✅ حذف "عقد بنك" إذا كان التمويل من المالك فقط
+    if (isPrivateFunding && type.value === "bank_contract") {
+      return false;
+    }
+    return true;
+  });
 
   // ✅ استخدام attachmentIndex الفعلي، إذا لم يكن موجوداً نستخدم index (للتوافق مع الكود القديم)
   const actualIndex = attachmentIndex !== undefined ? attachmentIndex : index;
@@ -35,7 +44,7 @@ export default function ContractAttachment({
     if (type === "appendix") {
       return `ملحق عقد ${appendixNum + 1}`;
     }
-    const typeOption = ATTACHMENT_TYPES.find((opt) => opt.value === type);
+    const typeOption = availableAttachmentTypes.find((opt) => opt.value === type);
     return typeOption ? typeOption.label : type;
   };
 
@@ -113,7 +122,7 @@ export default function ContractAttachment({
         <Field label="نوع المرفق">
           <RtlSelect
             className="rtl-select"
-            options={ATTACHMENT_TYPES}
+            options={availableAttachmentTypes}
             value={attachment.type || ""}
             onChange={(v) => {
               onUpdate(actualIndex, "type", v);

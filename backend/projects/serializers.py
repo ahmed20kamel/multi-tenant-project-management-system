@@ -4,7 +4,7 @@ from django.db import models
 from rest_framework import serializers
 from .models import (
     Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment,
-    Variation, InitialInvoice, ActualInvoice
+    Variation, ActualInvoice
 )
 
 # Import WorkflowStage for serializer
@@ -665,13 +665,20 @@ class SitePlanSerializer(serializers.ModelSerializer):
         siteplan = SitePlan.objects.create(**validated_data)
         
         # ✅ حفظ الملاك بشكل صحيح
-        for od in owners_data:
+        for idx, od in enumerate(owners_data):
             # ✅ استخراج id_attachment من od
             file_obj = od.pop("id_attachment", None)
             owner = SitePlanOwner.objects.create(siteplan=siteplan, **od)
             
-            # ✅ إضافة الملف إذا كان موجوداً
+            # ✅ إضافة الملف إذا كان موجوداً مع تعيين الفهرس للدالة upload_to
             if file_obj:
+                owner._owner_index = idx + 1
+                # حذف أي ملف سابق بنفس المسار لتفادي إضافة لاحقة
+                if owner.id_attachment:
+                    try:
+                        owner.id_attachment.delete(save=False)
+                    except Exception:
+                        pass
                 owner.id_attachment = file_obj
                 owner.save()
 
@@ -708,14 +715,26 @@ class SitePlanSerializer(serializers.ModelSerializer):
             logger.warning("Update: No owners found in request or validated_data")
 
         # -----------------------------
-        # 2) تحديث حقول الـ SitePlan
+        # 2) التعامل مع ملف المعاملة (application_file)
+        # -----------------------------
+        file_obj = validated_data.get("application_file")
+        if file_obj and isinstance(file_obj, (InMemoryUploadedFile, UploadedFile)):
+            # حذف الملف السابق لتجنب إضافة لاحقة على الاسم
+            if instance.application_file:
+                try:
+                    instance.application_file.delete(save=False)
+                except Exception:
+                    pass
+
+        # -----------------------------
+        # 3) تحديث حقول الـ SitePlan
         # -----------------------------
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
         # -----------------------------
-        # 3) لو مفيش ملاك في الريكوست → سيب الموجود وتحديث اسم المشروع
+        # 4) لو مفيش ملاك في الريكوست → سيب الموجود وتحديث اسم المشروع
         # -----------------------------
         if owners_data is None:
             # ✅ تحديث اسم المشروع من الملاك الموجودين
@@ -765,7 +784,13 @@ class SitePlanSerializer(serializers.ModelSerializer):
 
                 # ✅ تحديث الملف أولاً
                 if file_obj and isinstance(file_obj, (InMemoryUploadedFile, UploadedFile)):
-                    # ملف جديد
+                    # ملف جديد - تعيين الفهرس للدالة upload_to وحذف القديم لتجنب لاحقة
+                    obj._owner_index = list(existing.keys()).index(oid) + 1
+                    if obj.id_attachment:
+                        try:
+                            obj.id_attachment.delete(save=False)
+                        except Exception:
+                            pass
                     obj.id_attachment = file_obj
                 elif delete_file:
                     # حذف الملف (إذا كان صريحاً)
@@ -793,8 +818,17 @@ class SitePlanSerializer(serializers.ModelSerializer):
                 od.pop("id", None)
                 new_owner = SitePlanOwner.objects.create(siteplan=instance, **od)
                 
-                # ✅ إضافة الملف إذا كان موجوداً
+                # ✅ إضافة الملف إذا كان موجوداً مع تعيين الفهرس للدالة upload_to
                 if file_obj and isinstance(file_obj, (InMemoryUploadedFile, UploadedFile)):
+                    # حساب الفهرس بناءً على عدد الملاك الموجودين + الملاك الجدد
+                    owner_index = len([o for o in existing.values() if o]) + len([o for o in received_ids if o]) + 1
+                    new_owner._owner_index = owner_index
+                    # حذف أي ملف سابق (احترازي) لتفادي لاحقة
+                    if new_owner.id_attachment:
+                        try:
+                            new_owner.id_attachment.delete(save=False)
+                        except Exception:
+                            pass
                     new_owner.id_attachment = file_obj
                     new_owner.save()
                 
@@ -1077,6 +1111,15 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
                 logger = logging.getLogger(__name__)
                 logger.error(f"Error restoring owners from license to siteplan: {e}")
         
+        # ✅ التعامل مع ملف رخصة البناء لتجنب إضافة لاحقة على الاسم
+        file_obj = validated_data.get("building_license_file")
+        if file_obj and isinstance(file_obj, (InMemoryUploadedFile, UploadedFile)):
+            if instance.building_license_file:
+                try:
+                    instance.building_license_file.delete(save=False)
+                except Exception:
+                    pass
+
         # ✅ تحديث باقي الحقول
         return super().update(instance, validated_data)
 
@@ -1101,6 +1144,13 @@ class ContractSerializer(serializers.ModelSerializer):
     contract_appendix_file = serializers.FileField(required=False, allow_null=True)
     contract_explanation_file = serializers.FileField(required=False, allow_null=True)
     start_order_file = serializers.FileField(required=False, allow_null=True)
+    
+    # ✅ المرفقات الثابتة
+    quantities_table_file = serializers.FileField(required=False, allow_null=True)
+    approved_materials_table_file = serializers.FileField(required=False, allow_null=True)
+    price_offer_file = serializers.FileField(required=False, allow_null=True)
+    contractual_drawings_file = serializers.FileField(required=False, allow_null=True)
+    general_specifications_file = serializers.FileField(required=False, allow_null=True)
     
     # ✅ Pattern لاستخراج owners من FormData (مثل SitePlanSerializer)
     _owners_key_re = re.compile(r"^owners\[(\d+)\]\[(\w+)\]$")
@@ -1133,6 +1183,9 @@ class ContractSerializer(serializers.ModelSerializer):
             "bank_fee_extra_mode", "bank_fee_extra_value",
             # الملفات
             "contract_file", "contract_appendix_file", "contract_explanation_file", "start_order_file",
+            # المرفقات الثابتة
+            "quantities_table_file", "approved_materials_table_file", "price_offer_file",
+            "contractual_drawings_file", "general_specifications_file",
             # المرفقات الديناميكية
             "attachments",
             # التمديدات
@@ -1684,107 +1737,6 @@ class VariationSerializer(serializers.ModelSerializer):
 # =========================
 # Invoice
 # =========================
-class InitialInvoiceSerializer(serializers.ModelSerializer):
-    project_name = serializers.SerializerMethodField()
-    remaining_balance = serializers.SerializerMethodField()
-    status = serializers.SerializerMethodField()
-    items = serializers.JSONField(default=list, required=False, allow_null=True)
-    
-    class Meta:
-        model = InitialInvoice
-        fields = [
-            "id", "project",
-            "amount", "stage", "description", "invoice_date", "invoice_number", "items",
-            "project_name", "remaining_balance", "status",
-            "created_at", "updated_at",
-        ]
-        read_only_fields = ["created_at", "updated_at", "remaining_balance", "status"]
-    
-    def to_representation(self, instance):
-        """Ensure items is always returned as a list"""
-        data = super().to_representation(instance)
-        # ✅ Ensure items is always an array, even if None or missing
-        if 'items' not in data or data['items'] is None:
-            data['items'] = []
-        elif not isinstance(data['items'], list):
-            data['items'] = [data['items']] if data['items'] else []
-        return data
-    
-    def validate_invoice_number(self, value):
-        """Convert empty string to None to avoid UNIQUE constraint violation"""
-        if value == "" or value is None:
-            return None
-        return value
-    
-    def create(self, validated_data):
-        """Auto-generate invoice_number if not provided"""
-        # Convert empty string to None
-        if not validated_data.get('invoice_number'):
-            validated_data['invoice_number'] = None
-        
-        # Generate invoice number if still None
-        if validated_data.get('invoice_number') is None:
-            import datetime
-            project_id = validated_data.get('project').id if validated_data.get('project') else 'X'
-            timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-            # Add random suffix to ensure uniqueness
-            import random
-            random_suffix = random.randint(1000, 9999)
-            validated_data['invoice_number'] = f"INV-{project_id}-{timestamp}-{random_suffix}"
-        
-        return super().create(validated_data)
-    
-    def update(self, instance, validated_data):
-        """Handle invoice_number update"""
-        # Convert empty string to None
-        if 'invoice_number' in validated_data:
-            if validated_data['invoice_number'] == "":
-                validated_data['invoice_number'] = None
-        
-        return super().update(instance, validated_data)
-    
-    def get_project_name(self, obj):
-        if not obj or not obj.project:
-            return None
-        try:
-            project = obj.project
-            if project.name and project.name.strip():
-                return project.name
-            return f"Project #{project.id}"
-        except Exception:
-            return None
-    
-    def get_remaining_balance(self, obj):
-        """Calculate remaining balance: Initial Invoice amount - sum of Actual Invoices"""
-        if not obj:
-            return None
-        try:
-            # ✅ Handle case where items field might not exist in database
-            try:
-                total_paid = obj.actual_invoices.aggregate(
-                    total=models.Sum('amount')
-                )['total'] or 0
-                return float(obj.amount - total_paid)
-            except Exception as e:
-                # If there's an error (e.g., items field doesn't exist), return amount
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Error calculating remaining balance: {e}")
-                return float(obj.amount)
-        except Exception:
-            return float(obj.amount)
-    
-    def get_status(self, obj):
-        """Get invoice status: 'closed' if fully paid, 'open' if remaining balance"""
-        remaining = self.get_remaining_balance(obj)
-        return 'closed' if remaining <= 0 else 'open'
-    
-    def validate_invoice_number(self, value):
-        """Convert empty string to None to avoid UNIQUE constraint violation"""
-        if value == "" or value is None:
-            return None
-        return value
-    
     def create(self, validated_data):
         """Auto-generate invoice_number if not provided"""
         # Convert empty string to None
@@ -1821,7 +1773,7 @@ class ActualInvoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = ActualInvoice
         fields = [
-            "id", "project", "payment", "initial_invoice",
+            "id", "project", "payment",
             "amount", "invoice_date", "invoice_number", "description", "items",
             "project_name", "payment_id",
             "created_at", "updated_at",
@@ -1842,7 +1794,6 @@ class ActualInvoiceSerializer(serializers.ModelSerializer):
                 'id': instance.id,
                 'project': instance.project_id,
                 'payment': instance.payment_id if instance.payment else None,
-                'initial_invoice': instance.initial_invoice_id if instance.initial_invoice else None,
                 'amount': str(instance.amount),
                 'invoice_date': instance.invoice_date.isoformat() if instance.invoice_date else None,
                 'invoice_number': instance.invoice_number or None,
@@ -1863,19 +1814,10 @@ class ActualInvoiceSerializer(serializers.ModelSerializer):
         return data
     
     def validate(self, data):
-        """Validate that project is provided or can be derived from initial_invoice"""
-        if 'project' not in data and 'initial_invoice' in data and data['initial_invoice']:
-            # Try to get project from initial_invoice
-            try:
-                initial_invoice = data['initial_invoice']
-                if hasattr(initial_invoice, 'project'):
-                    data['project'] = initial_invoice.project
-            except Exception:
-                pass
-        
+        """Validate that project is provided"""
         if 'project' not in data:
             raise serializers.ValidationError({
-                'project': 'Project is required. Either provide project directly or ensure initial_invoice has a project.'
+                'project': 'Project is required.'
             })
         
         return data

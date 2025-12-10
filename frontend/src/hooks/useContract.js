@@ -39,6 +39,12 @@ const INITIAL_FORM = {
   general_notes: "",
   attachments: [], // المرفقات الديناميكية
   extensions: [], // التمديدات: [{reason: string, days: number, months: number}, ...]
+  // ✅ مرفقات العقد الثابتة
+  quantities_table_file: null,
+  approved_materials_table_file: null,
+  price_offer_file: null,
+  contractual_drawings_file: null,
+  general_specifications_file: null,
 };
 
 export default function useContract(projectId) {

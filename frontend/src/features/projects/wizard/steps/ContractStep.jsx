@@ -142,6 +142,17 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
   const [contractAppendixFileName, setContractAppendixFileName] = useState("");
   const [contractExplanationFileUrl, setContractExplanationFileUrl] = useState("");
   const [contractExplanationFileName, setContractExplanationFileName] = useState("");
+  // ✅ URLs للمرفقات الثابتة
+  const [quantitiesTableFileUrl, setQuantitiesTableFileUrl] = useState("");
+  const [quantitiesTableFileName, setQuantitiesTableFileName] = useState("");
+  const [approvedMaterialsTableFileUrl, setApprovedMaterialsTableFileUrl] = useState("");
+  const [approvedMaterialsTableFileName, setApprovedMaterialsTableFileName] = useState("");
+  const [priceOfferFileUrl, setPriceOfferFileUrl] = useState("");
+  const [priceOfferFileName, setPriceOfferFileName] = useState("");
+  const [contractualDrawingsFileUrl, setContractualDrawingsFileUrl] = useState("");
+  const [contractualDrawingsFileName, setContractualDrawingsFileName] = useState("");
+  const [generalSpecificationsFileUrl, setGeneralSpecificationsFileUrl] = useState("");
+  const [generalSpecificationsFileName, setGeneralSpecificationsFileName] = useState("");
 
   // قوائم ثابتة
   const CONTRACT_CLASSIFICATION = useMemo(
@@ -296,6 +307,28 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
             setContractExplanationFileUrl(contractData.contract_explanation_file);
             setContractExplanationFileName(extractFileNameFromUrl(contractData.contract_explanation_file));
           }
+          
+          // ✅ تحميل المرفقات الثابتة
+          if (contractData.quantities_table_file) {
+            setQuantitiesTableFileUrl(contractData.quantities_table_file);
+            setQuantitiesTableFileName(extractFileNameFromUrl(contractData.quantities_table_file));
+          }
+          if (contractData.approved_materials_table_file) {
+            setApprovedMaterialsTableFileUrl(contractData.approved_materials_table_file);
+            setApprovedMaterialsTableFileName(extractFileNameFromUrl(contractData.approved_materials_table_file));
+          }
+          if (contractData.price_offer_file) {
+            setPriceOfferFileUrl(contractData.price_offer_file);
+            setPriceOfferFileName(extractFileNameFromUrl(contractData.price_offer_file));
+          }
+          if (contractData.contractual_drawings_file) {
+            setContractualDrawingsFileUrl(contractData.contractual_drawings_file);
+            setContractualDrawingsFileName(extractFileNameFromUrl(contractData.contractual_drawings_file));
+          }
+          if (contractData.general_specifications_file) {
+            setGeneralSpecificationsFileUrl(contractData.general_specifications_file);
+            setGeneralSpecificationsFileName(extractFileNameFromUrl(contractData.general_specifications_file));
+          }
         }
       } catch (e) {}
     })();
@@ -303,7 +336,6 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
 
   // بناء الحمولة والحفظ
   const buildPayload = () => {
-    if (!form.contract_classification) throw new Error(t("contract.errors.select_classification"));
     if (!form.contract_type) throw new Error(t("contract.errors.select_type"));
     if (!form.contract_date) throw new Error(t("contract.errors.select_date"));
 
@@ -338,7 +370,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
     }
 
     const jsonPayload = {
-      contract_classification: form.contract_classification,
+      contract_classification: form.contract_classification || "",
       contract_type: form.contract_type,
       tender_no: form.tender_no || "",
       contract_date: toIsoDate(form.contract_date),
@@ -465,6 +497,23 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
       fd.append("contract_explanation_file", form.contract_explanation_file);
     }
     
+    // ✅ إضافة المرفقات الثابتة
+    if (form.quantities_table_file && form.quantities_table_file instanceof File) {
+      fd.append("quantities_table_file", form.quantities_table_file);
+    }
+    if (form.approved_materials_table_file && form.approved_materials_table_file instanceof File) {
+      fd.append("approved_materials_table_file", form.approved_materials_table_file);
+    }
+    if (form.price_offer_file && form.price_offer_file instanceof File) {
+      fd.append("price_offer_file", form.price_offer_file);
+    }
+    if (form.contractual_drawings_file && form.contractual_drawings_file instanceof File) {
+      fd.append("contractual_drawings_file", form.contractual_drawings_file);
+    }
+    if (form.general_specifications_file && form.general_specifications_file instanceof File) {
+      fd.append("general_specifications_file", form.general_specifications_file);
+    }
+    
     return fd;
   };
 
@@ -491,7 +540,12 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         (form.start_order_file && form.start_order_file instanceof File) ||
         (form.contract_file && form.contract_file instanceof File) ||
         (form.contract_appendix_file && form.contract_appendix_file instanceof File) ||
-        (form.contract_explanation_file && form.contract_explanation_file instanceof File);
+        (form.contract_explanation_file && form.contract_explanation_file instanceof File) ||
+        (form.quantities_table_file && form.quantities_table_file instanceof File) ||
+        (form.approved_materials_table_file && form.approved_materials_table_file instanceof File) ||
+        (form.price_offer_file && form.price_offer_file instanceof File) ||
+        (form.contractual_drawings_file && form.contractual_drawings_file instanceof File) ||
+        (form.general_specifications_file && form.general_specifications_file instanceof File);
       
       if (existingId) {
         await api.patch(`projects/${projectId}/contract/${existingId}/`, payload);
@@ -522,6 +576,28 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
             setContractExplanationFileUrl(contractData.contract_explanation_file);
             setContractExplanationFileName(extractFileNameFromUrl(contractData.contract_explanation_file));
           }
+          
+          // ✅ تحديث URLs للمرفقات الثابتة
+          if (contractData.quantities_table_file) {
+            setQuantitiesTableFileUrl(contractData.quantities_table_file);
+            setQuantitiesTableFileName(extractFileNameFromUrl(contractData.quantities_table_file));
+          }
+          if (contractData.approved_materials_table_file) {
+            setApprovedMaterialsTableFileUrl(contractData.approved_materials_table_file);
+            setApprovedMaterialsTableFileName(extractFileNameFromUrl(contractData.approved_materials_table_file));
+          }
+          if (contractData.price_offer_file) {
+            setPriceOfferFileUrl(contractData.price_offer_file);
+            setPriceOfferFileName(extractFileNameFromUrl(contractData.price_offer_file));
+          }
+          if (contractData.contractual_drawings_file) {
+            setContractualDrawingsFileUrl(contractData.contractual_drawings_file);
+            setContractualDrawingsFileName(extractFileNameFromUrl(contractData.contractual_drawings_file));
+          }
+          if (contractData.general_specifications_file) {
+            setGeneralSpecificationsFileUrl(contractData.general_specifications_file);
+            setGeneralSpecificationsFileName(extractFileNameFromUrl(contractData.general_specifications_file));
+          }
         }
       } catch (e) {
         console.error("Error loading contract file URLs:", e);
@@ -532,6 +608,12 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
       if (form.contract_file instanceof File) setF("contract_file", null);
       if (form.contract_appendix_file instanceof File) setF("contract_appendix_file", null);
       if (form.contract_explanation_file instanceof File) setF("contract_explanation_file", null);
+      // ✅ إزالة File objects للمرفقات الثابتة
+      if (form.quantities_table_file instanceof File) setF("quantities_table_file", null);
+      if (form.approved_materials_table_file instanceof File) setF("approved_materials_table_file", null);
+      if (form.price_offer_file instanceof File) setF("price_offer_file", null);
+      if (form.contractual_drawings_file instanceof File) setF("contractual_drawings_file", null);
+      if (form.general_specifications_file instanceof File) setF("general_specifications_file", null);
       
       // ✅ إرسال حدث لتحديث بيانات المشروع في WizardPage
       if (typeof window !== "undefined") {
@@ -572,6 +654,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
   };
 
   const isHousing = form.contract_classification === "housing_loan_program";
+  const isPrivateFunding = form.contract_classification === "private_funding";
   // ✅ للقرض السكني: إذا كان هناك onNext، نعرض "حفظ و التالي"، وإلا "حفظ"
   const finishLabel = isHousing && onNext ? `${t("save_next")} →` : (isHousing ? t("save") : t("finish"));
 
@@ -596,61 +679,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
 
       {/* الأقسام الثلاثة الأولى جنب بعض */}
       <div className="form-grid cols-3" style={{ gap: "var(--space-6)", alignItems: "flex-start" }}>
-        {/* 1) تصنيف العقد */}
-        <div style={{
-          background: "var(--surface)",
-          borderRadius: "12px",
-          padding: "24px",
-          border: "1px solid var(--border)",
-          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.05)"
-        }}>
-          <h4 className="wizard-section-title" style={{ marginBottom: "20px" }}>1) {t("contract.sections.classification")}</h4>
-          {viewMode ? (
-            <div className="card">
-              <div className="p-8 row row--align-center row--gap-8">
-              <span>{CONTRACT_CLASSIFICATION.find(m => m.value === form.contract_classification)?.label || t("empty_value")}</span>
-              {form.contract_classification && (
-                <InfoTip
-                  align="start"
-                  text={
-                    form.contract_classification === "housing_loan_program"
-                      ? t("contract.classification.housing_loan_program.desc")
-                      : t("contract.classification.private_funding.desc")
-                  }
-                />
-              )}
-              </div>
-            </div>
-          ) : (
-            <div className="row row--align-center flex-wrap">
-            <div className="chips flex-1">
-              {CONTRACT_CLASSIFICATION.map((m) => (
-                <button
-                  key={m.value}
-                  type="button"
-                  className={`chip ${form.contract_classification === m.value ? "active" : ""}`}
-                  onClick={() => setF("contract_classification", m.value)}
-                  title={m.desc}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-            {form.contract_classification && (
-              <InfoTip
-                align="start"
-                text={
-                  form.contract_classification === "housing_loan_program"
-                    ? t("contract.classification.housing_loan_program.desc")
-                    : t("contract.classification.private_funding.desc")
-                }
-              />
-            )}
-            </div>
-          )}
-        </div>
-
-        {/* 2) نوع العقد */}
+        {/* 1) نوع العقد */}
         <div style={{
           background: "var(--surface)",
           borderRadius: "12px",
@@ -675,7 +704,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
           </Field>
         </div>
 
-        {/* 3) بيانات العقد */}
+        {/* 3) معلومات العقد الأصيل */}
         <div style={{
           background: "var(--surface)",
           borderRadius: "12px",
@@ -683,7 +712,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
           border: "1px solid var(--border)",
           boxShadow: "0 2px 8px rgba(0, 0, 0, 0.05)"
         }}>
-          <h4 className="wizard-section-title" style={{ marginBottom: "20px" }}>3) {t("contract.sections.details")}</h4>
+          <h4 className="wizard-section-title" style={{ marginBottom: "20px" }}>3) معلومات العقد الأصيل</h4>
           {viewMode ? (
             <div className="form-grid cols-1" style={{ gap: "var(--space-4)" }}>
               <ViewRow
@@ -696,6 +725,16 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                 value={form.contract_date}
                 tip={form.contract_date ? `${t("contract.labels.day")}: ${getDayName(form.contract_date, i18next.language)}` : undefined}
               />
+              {contractFileUrl && (
+                <Field label="رفع العقد الأصيل">
+                  <FileAttachmentView
+                    fileUrl={contractFileUrl}
+                    fileName={contractFileName || (contractFileUrl ? extractFileNameFromUrl(contractFileUrl) : "") || (form.contract_file?.name || "")}
+                    projectId={projectId}
+                    endpoint={`projects/${projectId}/contract/`}
+                  />
+                </Field>
+              )}
             </div>
           ) : (
             <div className="form-grid cols-1" style={{ gap: "var(--space-4)" }}>
@@ -705,7 +744,6 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                     className="input"
                     value={form.tender_no}
                     onChange={(e) => setF("tender_no", e.target.value)}
-                    placeholder={t("contract.placeholders.contract_number")}
                   />
                   {isHousing && <InfoTip align="start" text={t("contract.notes.housing_tender_info")} />}
                 </div>
@@ -726,109 +764,134 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                   )}
                 </div>
               </Field>
+              <Field label="رفع العقد الأصيل">
+                <FileUpload
+                  value={form.contract_file}
+                  onChange={(file) => setF("contract_file", file)}
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                  maxSizeMB={10}
+                  showPreview={true}
+                  existingFileUrl={contractFileUrl}
+                  existingFileName={contractFileName || (contractFileUrl ? extractFileNameFromUrl(contractFileUrl) : "")}
+                  onRemoveExisting={() => {
+                    setContractFileUrl("");
+                    setContractFileName("");
+                    setF("contract_file", null);
+                  }}
+                  compressionOptions={{
+                    maxSizeMB: 1,
+                    maxWidthOrHeight: 1920,
+                  }}
+                />
+              </Field>
             </div>
           )}
         </div>
       </div>
 
-      {/* 2) مرفقات العقد */}
+      {/* 2) قيمة العقد والمدة */}
       <div className="wizard-section">
-        <h4 className="wizard-section-title">2) مرفقات العقد</h4>
+        <h4 className="wizard-section-title">2) {t("contract.sections.value_duration")} (القيم المالية الحقيقية)</h4>
         {viewMode ? (
+          <div className={`form-grid ${isPrivateFunding ? "cols-2" : "cols-4"}`} style={{ gap: "var(--space-4)" }}>
+            <Field label={t("contract_amount")}>
           <div>
-            {form.attachments && form.attachments.length > 0 ? (
-              <div style={{ 
-                display: "grid", 
-                gridTemplateColumns: "repeat(3, 1fr)", 
-                gap: "var(--space-4)"
-              }}>
-                {form.attachments.map((att, idx) => {
-                  // ✅ حساب عدد الملاحق السابقة (من نوع appendix فقط) - للعرض فقط
-                  const previousAppendices = form.attachments
-                    .slice(0, idx)
-                    .filter(a => a.type === "appendix");
-                  const appendixNumber = previousAppendices.length;
-                  
-                  return (
-                    <ContractAttachment
-                      key={idx}
-                      attachment={att}
-                      index={appendixNumber} // ✅ للعرض فقط (appendixNumber)
-                      attachmentIndex={idx} // ✅ الفهرس الفعلي (للتوافق)
-                      isView={true}
-                      onUpdate={() => {}}
-                      onRemove={() => {}}
-                      canRemove={false}
-                      projectId={projectId}
-                    />
-                  );
-                })}
+                <div className="font-mono fw-600">
+                  {formatMoney(form.total_project_value)}
               </div>
-            ) : (
-              <div className="card text-center prj-muted p-20">
-                لا توجد مرفقات
+                <div className="mini mt-8">
+                  {formatMoneyArabic(form.total_project_value)}
+                </div>
+                {form.total_project_value && (
+                  <div className="mini mt-8 font-italic">
+                    {numberToArabicWords(form.total_project_value)}
               </div>
             )}
           </div>
-        ) : (
+            </Field>
+            {/* ✅ إخفاء تمويل البنك وتمويل المالك عند تمويل المالك فقط */}
+            {isHousing && (
+              <>
+                <Field label={t("contract.fields.total_bank_value")}>
           <div>
-            {form.attachments && form.attachments.length > 0 && (
-              <div style={{ 
-                display: "grid", 
-                gridTemplateColumns: "repeat(3, 1fr)", 
-                gap: "var(--space-4)"
-              }}>
-                {form.attachments.map((att, idx) => {
-                  // ✅ حساب عدد الملاحق السابقة (من نوع appendix فقط) - للعرض فقط
-                  const previousAppendices = form.attachments
-                    .slice(0, idx)
-                    .filter(a => a.type === "appendix");
-                  const appendixNumber = previousAppendices.length;
-                  
-                  return (
-                    <ContractAttachment
-                      key={idx}
-                      attachment={att}
-                      index={appendixNumber} // ✅ للعرض فقط (appendixNumber)
-                      attachmentIndex={idx} // ✅ الفهرس الفعلي في المصفوفة
-                      isView={false}
-                      onUpdate={(attIndex, field, value) => {
-                        // ✅ استخدام attIndex مباشرة (هو idx الفعلي)
-                        const updated = [...form.attachments];
-                        updated[attIndex] = { ...updated[attIndex], [field]: value };
-                        setF("attachments", updated);
-                      }}
-                      onRemove={(attIndex) => {
-                        // ✅ استخدام attIndex مباشرة (هو idx الفعلي)
-                        const updated = form.attachments.filter((_, i) => i !== attIndex);
-                        setF("attachments", updated);
-                      }}
-                      canRemove={true}
-                      projectId={projectId}
-                    />
-                  );
-                })}
+                    <div className="font-mono fw-600">
+                      {formatMoney(form.total_bank_value)}
+                    </div>
+                    <div className="mini mt-8">
+                      {formatMoneyArabic(form.total_bank_value)}
+                    </div>
+                    {form.total_bank_value && (
+                      <div className="mini mt-8 font-italic">
+                        {numberToArabicWords(form.total_bank_value)}
+                      </div>
+                    )}
+                  </div>
+                </Field>
+                <Field label={t("contract.fields.total_owner_value_calc")}>
+                  <div>
+                    <div className="font-mono fw-600">
+                      {formatMoney(form.total_owner_value)}
+                    </div>
+                    <div className="mini mt-8">
+                      {formatMoneyArabic(form.total_owner_value)}
+                    </div>
+                    {form.total_owner_value && (
+                      <div className="mini mt-8 font-italic">
+                        {numberToArabicWords(form.total_owner_value)}
+                      </div>
+                    )}
+                  </div>
+                </Field>
+              </>
+            )}
+            <ViewRow label={t("contract.fields.project_duration_months")} value={form.project_duration_months} />
+          </div>
+        ) : (
+          <div className={`form-grid ${isPrivateFunding ? "cols-2" : "cols-4"}`} style={{ gap: "var(--space-4)" }}>
+          <Field label={t("contract.fields.total_project_value")}>
+            <NumberField
+              value={form.total_project_value}
+              onChange={(v) => setF("total_project_value", v)}
+            />
+          </Field>
+          {/* ✅ إخفاء تمويل البنك وتمويل المالك عند تمويل المالك فقط */}
+          {isHousing && (
+            <>
+              <Field label={t("contract.fields.total_bank_value")}>
+                <NumberField
+                  value={form.total_bank_value}
+                  onChange={(v) => setF("total_bank_value", v)}
+                />
+              </Field>
+              <Field label={t("contract.fields.total_owner_value_calc")}>
+                <NumberField
+                  value={form.total_owner_value}
+                  onChange={() => {}}
+                  readOnly
+                  style={{
+                    background: "var(--surface-2)",
+                    color: "var(--text)",
+                    cursor: "default"
+                  }}
+                />
+                {form.total_owner_value && (
+                  <div className="mini mt-4">
+                    {numberToArabicWords(form.total_owner_value)}
               </div>
             )}
-          
-            <div className="mt-12">
-              <Button
-                onClick={() => {
-                  const newAttachment = {
-                    type: "", // ✅ لا نوع افتراضي - المستخدم يختار
-                    date: "",
-                    file: null,
-                    file_url: null,
-                    file_name: null,
-                    notes: "",
-                  };
-                  setF("attachments", [...(form.attachments || []), newAttachment]);
-                }}
-                style={{ background: "#f97316", color: "white" }}
-              >
-                + إضافة مرفق
-              </Button>
-            </div>
+              </Field>
+            </>
+          )}
+          <Field label={t("contract.fields.project_duration_months")}>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              value={form.project_duration_months}
+              onChange={(e) => setF("project_duration_months", e.target.value)}
+              placeholder={t("empty_value")}
+            />
+          </Field>
           </div>
         )}
       </div>
@@ -957,18 +1020,37 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                             {o.phone || t("empty_value")}
                           </div>
                         ) : (
+                          <div style={{ display: "flex", alignItems: "center", flexDirection: "row-reverse" }}>
+                            <span
+                              style={{
+                                padding: "10px 12px",
+                                background: "var(--surface-2)",
+                                border: "1px solid var(--border)",
+                                borderRadius: "8px",
+                                minWidth: "70px",
+                                textAlign: "center",
+                                color: "var(--muted)",
+                                marginRight: "8px",
+                              }}
+                            >
+                              +971
+                            </span>
                           <input
                             className="input"
                             type="tel"
-                            value={o.phone || ""}
+                              value={(o.phone || "").replace("+971", "")}
                             onChange={(e) => {
-                              const formatted = formatUAEPhone(e.target.value);
+                                const digits = e.target.value.replace(/\D/g, "");
+                                const trimmed = digits.replace(/^0+/, "").slice(0, 9);
+                                const formatted = trimmed ? `+971${trimmed}` : "";
                               const updated = [...form.owners];
                               updated[i] = { ...updated[i], phone: formatted };
                               setF("owners", updated);
                             }}
-                            placeholder="+971XXXXXXXXX"
+                              placeholder="XXXXXXXXX"
+                              inputMode="numeric"
                           />
+                          </div>
                         )}
                       </Field>
                       
@@ -1060,115 +1142,10 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         </div>
       </div>
 
-      {/* 5) قيمة العقد والمدة */}
-      <div className="wizard-section">
-        <h4 className="wizard-section-title">5) {t("contract.sections.value_duration")} (القيم المالية الحقيقية)</h4>
-        {viewMode ? (
-          <div className="form-grid cols-4" style={{ gap: "var(--space-4)" }}>
-            <Field label={t("contract_amount")}>
-            <div>
-              <div className="font-mono fw-600">
-                {formatMoney(form.total_project_value)}
-              </div>
-                  <div className="mini mt-8">
-                    {formatMoneyArabic(form.total_project_value)}
-                  </div>
-                  {form.total_project_value && (
-                    <div className="mini mt-8 font-italic">
-                      {numberToArabicWords(form.total_project_value)}
-                    </div>
-                  )}
-            </div>
-            </Field>
-            {isHousing && (
-            <>
-              <Field label={t("contract.fields.total_bank_value")}>
-                <div>
-                  <div className="font-mono fw-600">
-                    {formatMoney(form.total_bank_value)}
-                  </div>
-                  <div className="mini mt-8">
-                    {formatMoneyArabic(form.total_bank_value)}
-                  </div>
-                  {form.total_bank_value && (
-                    <div className="mini mt-8 font-italic">
-                      {numberToArabicWords(form.total_bank_value)}
-                    </div>
-                  )}
-                </div>
-              </Field>
-              <Field label={t("contract.fields.total_owner_value_calc")}>
-                <div>
-                  <div className="font-mono fw-600">
-                    {formatMoney(form.total_owner_value)}
-                  </div>
-                  <div className="mini mt-8">
-                    {formatMoneyArabic(form.total_owner_value)}
-                  </div>
-                  {form.total_owner_value && (
-                    <div className="mini mt-8 font-italic">
-                      {numberToArabicWords(form.total_owner_value)}
-                    </div>
-                  )}
-                </div>
-              </Field>
-            </>
-            )}
-            <ViewRow label={t("contract.fields.project_duration_months")} value={form.project_duration_months} />
-          </div>
-        ) : (
-          <div className="form-grid cols-4" style={{ gap: "var(--space-4)" }}>
-          <Field label={t("contract.fields.total_project_value")}>
-            <NumberField
-              value={form.total_project_value}
-              onChange={(v) => setF("total_project_value", v)}
-            />
-          </Field>
-          {isHousing && (
-            <>
-              <Field label={t("contract.fields.total_bank_value")}>
-                <NumberField
-                  value={form.total_bank_value}
-                  onChange={(v) => setF("total_bank_value", v)}
-                />
-              </Field>
-              <Field label={t("contract.fields.total_owner_value_calc")}>
-                <NumberField
-                  value={form.total_owner_value}
-                  onChange={() => {}}
-                  readOnly
-                  style={{
-                    background: "var(--surface-2)",
-                    color: "var(--text)",
-                    cursor: "default"
-                  }}
-                />
-                {form.total_owner_value && (
-                  <div className="mini mt-4">
-                    {numberToArabicWords(form.total_owner_value)}
-                  </div>
-                )}
-              </Field>
-            </>
-          )}
-          <Field label={t("contract.fields.project_duration_months")}>
-            <input
-              className="input"
-              type="number"
-              min="0"
-              value={form.project_duration_months}
-              onChange={(e) => setF("project_duration_months", e.target.value)}
-              placeholder={t("empty_value")}
-            />
-          </Field>
-          </div>
-        )}
-      </div>
-
       {/* 6) أتعاب الاستشاري */}
       <div className="wizard-section">
         <h4 className="wizard-section-title">6) {t("contract.sections.consultant_fees")}</h4>
-        <div className="form-grid cols-2" style={{ gap: "var(--space-6)", alignItems: "flex-start" }}>
+        <div className={`form-grid ${isPrivateFunding ? "cols-1" : "cols-2"}`} style={{ gap: "var(--space-6)", alignItems: "flex-start" }}>
           <div style={{
             background: "var(--surface)",
             borderRadius: "12px",
@@ -1188,6 +1165,8 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
             <ConsultantFeesSection prefix="owner" form={form} setF={setF} isView={viewMode} isAR={isAR} />
           </div>
           
+          {/* ✅ إخفاء قسم البنك عند تمويل المالك فقط */}
+          {!isPrivateFunding && (
           <div style={{
             background: "var(--surface)",
             borderRadius: "12px",
@@ -1206,12 +1185,277 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
             </h5>
             <ConsultantFeesSection prefix="bank" form={form} setF={setF} isView={viewMode} isAR={isAR} />
           </div>
+          )}
         </div>
       </div>
 
-      {/* 7) أمر المباشرة */}
+      {/* 7) إضافة مرفقات العقد */}
       <div className="wizard-section">
-        <h4 className="wizard-section-title">7) {t("start_order_title")}</h4>
+        <h4 className="wizard-section-title">7) إضافة مرفقات العقد</h4>
+        
+        {/* ✅ المرفقات الثابتة */}
+        <div style={{ marginBottom: "var(--space-6)" }}>
+          <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
+            <Field label="1) جدول الكميات">
+              {viewMode ? (
+                quantitiesTableFileUrl ? (
+                  <FileAttachmentView
+                    fileUrl={quantitiesTableFileUrl}
+                    fileName={quantitiesTableFileName || extractFileNameFromUrl(quantitiesTableFileUrl)}
+                    projectId={projectId}
+                    endpoint={`projects/${projectId}/contract/`}
+                  />
+                ) : (
+                  <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
+                )
+              ) : (
+                <FileUpload
+                  value={form.quantities_table_file}
+                  onChange={(file) => setF("quantities_table_file", file)}
+                  accept=".pdf,.xlsx,.xls"
+                  maxSizeMB={10}
+                  showPreview={true}
+                  existingFileUrl={quantitiesTableFileUrl}
+                  existingFileName={quantitiesTableFileName}
+                  onRemoveExisting={() => {
+                    setQuantitiesTableFileUrl("");
+                    setQuantitiesTableFileName("");
+                    setF("quantities_table_file", null);
+                  }}
+                />
+              )}
+            </Field>
+            
+            <Field label="2) جدول المواد المعتمدة">
+              {viewMode ? (
+                approvedMaterialsTableFileUrl ? (
+                  <FileAttachmentView
+                    fileUrl={approvedMaterialsTableFileUrl}
+                    fileName={approvedMaterialsTableFileName || extractFileNameFromUrl(approvedMaterialsTableFileUrl)}
+                    projectId={projectId}
+                    endpoint={`projects/${projectId}/contract/`}
+                  />
+                ) : (
+                  <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
+                )
+              ) : (
+                <FileUpload
+                  value={form.approved_materials_table_file}
+                  onChange={(file) => setF("approved_materials_table_file", file)}
+                  accept=".pdf,.xlsx,.xls"
+                  maxSizeMB={10}
+                  showPreview={true}
+                  existingFileUrl={approvedMaterialsTableFileUrl}
+                  existingFileName={approvedMaterialsTableFileName}
+                  onRemoveExisting={() => {
+                    setApprovedMaterialsTableFileUrl("");
+                    setApprovedMaterialsTableFileName("");
+                    setF("approved_materials_table_file", null);
+                  }}
+                />
+              )}
+            </Field>
+            
+            <Field label="3) عرض السعر">
+              {viewMode ? (
+                priceOfferFileUrl ? (
+                  <FileAttachmentView
+                    fileUrl={priceOfferFileUrl}
+                    fileName={priceOfferFileName || extractFileNameFromUrl(priceOfferFileUrl)}
+                    projectId={projectId}
+                    endpoint={`projects/${projectId}/contract/`}
+                  />
+                ) : (
+                  <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
+                )
+              ) : (
+                <FileUpload
+                  value={form.price_offer_file}
+                  onChange={(file) => setF("price_offer_file", file)}
+                  accept=".pdf,.xlsx,.xls"
+                  maxSizeMB={10}
+                  showPreview={true}
+                  existingFileUrl={priceOfferFileUrl}
+                  existingFileName={priceOfferFileName}
+                  onRemoveExisting={() => {
+                    setPriceOfferFileUrl("");
+                    setPriceOfferFileName("");
+                    setF("price_offer_file", null);
+                  }}
+                />
+              )}
+            </Field>
+            
+            <Field label="4) مخططات تعاقدية">
+              {viewMode ? (
+                contractualDrawingsFileUrl ? (
+                  <FileAttachmentView
+                    fileUrl={contractualDrawingsFileUrl}
+                    fileName={contractualDrawingsFileName || extractFileNameFromUrl(contractualDrawingsFileUrl)}
+                    projectId={projectId}
+                    endpoint={`projects/${projectId}/contract/`}
+                  />
+                ) : (
+                  <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
+                )
+              ) : (
+                <FileUpload
+                  value={form.contractual_drawings_file}
+                  onChange={(file) => setF("contractual_drawings_file", file)}
+                  accept=".pdf,.dwg,.dxf"
+                  maxSizeMB={10}
+                  showPreview={true}
+                  existingFileUrl={contractualDrawingsFileUrl}
+                  existingFileName={contractualDrawingsFileName}
+                  onRemoveExisting={() => {
+                    setContractualDrawingsFileUrl("");
+                    setContractualDrawingsFileName("");
+                    setF("contractual_drawings_file", null);
+                  }}
+                />
+              )}
+            </Field>
+            
+            <Field label="5) المواصفات العامة والخاصة">
+              {viewMode ? (
+                generalSpecificationsFileUrl ? (
+                  <FileAttachmentView
+                    fileUrl={generalSpecificationsFileUrl}
+                    fileName={generalSpecificationsFileName || extractFileNameFromUrl(generalSpecificationsFileUrl)}
+                    projectId={projectId}
+                    endpoint={`projects/${projectId}/contract/`}
+                  />
+                ) : (
+                  <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
+                )
+              ) : (
+                <FileUpload
+                  value={form.general_specifications_file}
+                  onChange={(file) => setF("general_specifications_file", file)}
+                  accept=".pdf,.doc,.docx"
+                  maxSizeMB={10}
+                  showPreview={true}
+                  existingFileUrl={generalSpecificationsFileUrl}
+                  existingFileName={generalSpecificationsFileName}
+                  onRemoveExisting={() => {
+                    setGeneralSpecificationsFileUrl("");
+                    setGeneralSpecificationsFileName("");
+                    setF("general_specifications_file", null);
+                  }}
+                />
+              )}
+            </Field>
+          </div>
+        </div>
+        
+        {/* ✅ المرفقات الديناميكية (الملاحق) */}
+        <div style={{ marginTop: "var(--space-6)", paddingTop: "var(--space-6)", borderTop: "2px solid var(--border)" }}>
+          <h5 style={{ marginBottom: "var(--space-4)", fontSize: "18px", fontWeight: "600" }}>الملاحق الإضافية</h5>
+        {viewMode ? (
+          <div>
+            {form.attachments && form.attachments.length > 0 ? (
+              <div style={{ 
+                display: "grid", 
+                gridTemplateColumns: "repeat(3, 1fr)", 
+                gap: "var(--space-4)"
+              }}>
+                {form.attachments.map((att, idx) => {
+                  // ✅ حساب عدد الملاحق السابقة (من نوع appendix فقط) - للعرض فقط
+                  const previousAppendices = form.attachments
+                    .slice(0, idx)
+                    .filter(a => a.type === "appendix");
+                  const appendixNumber = previousAppendices.length;
+                  
+                  return (
+                    <ContractAttachment
+                      key={idx}
+                      attachment={att}
+                      index={appendixNumber} // ✅ للعرض فقط (appendixNumber)
+                      attachmentIndex={idx} // ✅ الفهرس الفعلي (للتوافق)
+                      isView={true}
+                      onUpdate={() => {}}
+                      onRemove={() => {}}
+                      canRemove={false}
+                      projectId={projectId}
+                      isPrivateFunding={isPrivateFunding}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="card text-center prj-muted p-20">
+                لا توجد ملاحق
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            {form.attachments && form.attachments.length > 0 && (
+              <div style={{ 
+                display: "grid", 
+                gridTemplateColumns: "repeat(3, 1fr)", 
+                gap: "var(--space-4)"
+              }}>
+                {form.attachments.map((att, idx) => {
+                  // ✅ حساب عدد الملاحق السابقة (من نوع appendix فقط) - للعرض فقط
+                  const previousAppendices = form.attachments
+                    .slice(0, idx)
+                    .filter(a => a.type === "appendix");
+                  const appendixNumber = previousAppendices.length;
+                  
+                  return (
+                    <ContractAttachment
+                      key={idx}
+                      attachment={att}
+                      index={appendixNumber} // ✅ للعرض فقط (appendixNumber)
+                      attachmentIndex={idx} // ✅ الفهرس الفعلي في المصفوفة
+                      isView={false}
+                      onUpdate={(attIndex, field, value) => {
+                        // ✅ استخدام attIndex مباشرة (هو idx الفعلي)
+                        const updated = [...form.attachments];
+                        updated[attIndex] = { ...updated[attIndex], [field]: value };
+                        setF("attachments", updated);
+                      }}
+                      onRemove={(attIndex) => {
+                        // ✅ استخدام attIndex مباشرة (هو idx الفعلي)
+                        const updated = form.attachments.filter((_, i) => i !== attIndex);
+                        setF("attachments", updated);
+                      }}
+                      canRemove={true}
+                      projectId={projectId}
+                      isPrivateFunding={isPrivateFunding}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          
+            <div className="mt-12">
+              <Button
+                onClick={() => {
+                  const newAttachment = {
+                    type: "", // ✅ لا نوع افتراضي - المستخدم يختار
+                    date: "",
+                    file: null,
+                    file_url: null,
+                    file_name: null,
+                    notes: "",
+                  };
+                  setF("attachments", [...(form.attachments || []), newAttachment]);
+                }}
+                style={{ background: "#f97316", color: "white" }}
+              >
+                + إضافة ملحق عقد جديد
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+      </div>
+
+      {/* 8) أمر المباشرة */}
+      <div className="wizard-section">
+        <h4 className="wizard-section-title">8) {t("start_order_title")}</h4>
         {viewMode ? (
           <div className="form-grid cols-3" style={{ gap: "var(--space-4)" }}>
             <ViewRow

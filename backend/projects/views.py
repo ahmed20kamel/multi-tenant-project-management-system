@@ -11,7 +11,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from .models import (
     Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment,
-    Variation, InitialInvoice, ActualInvoice
+    Variation, ActualInvoice
 )
 from .serializers import (
     ProjectSerializer,
@@ -21,7 +21,6 @@ from .serializers import (
     AwardingSerializer,
     PaymentSerializer,
     VariationSerializer,
-    InitialInvoiceSerializer,
     ActualInvoiceSerializer,
 )
 from decimal import Decimal
@@ -780,64 +779,16 @@ class PaymentViewSet(viewsets.ModelViewSet):
                             'actual_invoice': f'Actual Invoice {actual_invoice_id} not found or already linked to another payment.'
                         })
                 else:
-                    # ✅ إذا لم يتم تحديد فاتورة فعلية، إنشاء واحدة جديدة (المنطق القديم)
-                    initial_invoice_id = None
-                    if hasattr(self.request, 'data'):
-                        request_data = self.request.data
-                        if isinstance(request_data, dict):
-                            initial_invoice_id = request_data.get('initial_invoice')
-                        elif hasattr(request_data, 'get'):
-                            initial_invoice_id = request_data.get('initial_invoice')
-                    
-                    initial_invoice = None
-                    if initial_invoice_id:
-                        try:
-                            initial_invoice = InitialInvoice.objects.get(
-                                id=int(initial_invoice_id),
-                                project=payment.project
-                            )
-                        except (InitialInvoice.DoesNotExist, ValueError):
-                            import logging
-                            logger = logging.getLogger(__name__)
-                            logger.warning(f"Initial Invoice {initial_invoice_id} not found for project {payment.project.id}")
-                    
-                    # If no initial invoice specified, try to find the latest open one
-                    if not initial_invoice:
-                        initial_invoice = InitialInvoice.objects.filter(
-                            project=payment.project
-                        ).order_by('-invoice_date', '-created_at').first()
-                    
-                    # Validate amount doesn't exceed remaining balance
-                    if initial_invoice:
-                        # Calculate remaining balance (exclude current payment's actual invoice if editing)
-                        exclude_id = None
-                        if hasattr(payment, 'actual_invoice') and payment.actual_invoice:
-                            exclude_id = payment.actual_invoice.id
-                        
-                        total_paid = ActualInvoice.objects.filter(
-                            initial_invoice=initial_invoice
-                        ).exclude(id=exclude_id).aggregate(
-                            total=models.Sum('amount')
-                        )['total'] or 0
-                        
-                        remaining_balance = float(initial_invoice.amount) - float(total_paid)
-                        
-                        if float(payment.amount) > remaining_balance:
-                            from rest_framework import serializers as drf_serializers
-                            raise drf_serializers.ValidationError({
-                                'amount': f'Payment amount ({payment.amount}) exceeds remaining balance ({remaining_balance}) for Initial Invoice {initial_invoice.id}'
-                            })
-                    
-                    # Create ActualInvoice linked to this payment
-                    actual_invoice = ActualInvoice.objects.create(
-                        project=payment.project,
-                        payment=payment,
-                        initial_invoice=initial_invoice,
-                        amount=payment.amount,
-                        invoice_date=payment.date,
-                        description=payment.description or f"Payment invoice for {payment.amount}",
-                        tenant=payment.tenant
-                    )
+                    # إنشاء فاتورة جديدة مرتبطة بالدفعة
+                    if payment.project:
+                        actual_invoice = ActualInvoice.objects.create(
+                            project=payment.project,
+                            payment=payment,
+                            amount=payment.amount,
+                            invoice_date=payment.date,
+                            description=payment.description or f"Payment invoice for {payment.amount}",
+                            tenant=payment.tenant
+                        )
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
@@ -912,39 +863,7 @@ class VariationViewSet(_ProjectChildViewSet):
 
 
 # =========================
-# Initial Invoice ViewSet
-# =========================
-class InitialInvoiceViewSet(_ProjectChildViewSet):
-    queryset = InitialInvoice.objects.all().order_by("-invoice_date", "-created_at")
-    serializer_class = InitialInvoiceSerializer
-    
-    def list(self, request, *args, **kwargs):
-        """Handle potential database errors gracefully"""
-        try:
-            return super().list(request, *args, **kwargs)
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error listing initial invoices: {e}", exc_info=True)
-            # ✅ Return empty list instead of 500 error if items field doesn't exist
-            return Response([], status=status.HTTP_200_OK)
-    
-    def retrieve(self, request, *args, **kwargs):
-        """Handle potential database errors gracefully"""
-        try:
-            return super().retrieve(request, *args, **kwargs)
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error retrieving initial invoice: {e}", exc_info=True)
-            return Response(
-                {"detail": "Error retrieving invoice. Please check database schema."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-
-# =========================
-# Actual Invoice ViewSet
+# Invoice ViewSet
 # =========================
 class ActualInvoiceViewSet(_ProjectChildViewSet):
     queryset = ActualInvoice.objects.all().order_by("-invoice_date", "-created_at")

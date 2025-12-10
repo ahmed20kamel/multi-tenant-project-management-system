@@ -93,18 +93,6 @@ export default function CreatePaymentPage() {
     try {
       const { data } = await api.get(`payments/${paymentId}/`);
       
-      // Get initial_invoice from actual_invoice if available
-      let initialInvoiceId = "";
-      if (data.actual_invoice_id) {
-        try {
-          // Try to get the actual invoice to find initial_invoice
-          const actualInvoiceResponse = await api.get(`projects/${data.project}/actual-invoices/${data.actual_invoice_id}/`);
-          initialInvoiceId = actualInvoiceResponse.data.initial_invoice || "";
-        } catch (e) {
-          console.warn("Could not load actual invoice:", e);
-        }
-      }
-      
       setFormData({
         amount: data.amount || "",
         date: data.date ? new Date(data.date).toISOString().split("T")[0] : "",
@@ -123,41 +111,19 @@ export default function CreatePaymentPage() {
         completion_percentage: data.completion_percentage || "",
       });
 
-      // ✅ تحميل الرصيد المتبقي للفاتورة المبدئية المحددة
-      if (initialInvoiceId && data.project) {
-        try {
-          const invoiceResponse = await api.get(`projects/${data.project}/initial-invoices/${initialInvoiceId}/`);
-          const remaining = parseFloat(invoiceResponse.data.remaining_balance || invoiceResponse.data.amount || 0);
-          setSelectedInvoiceRemaining(remaining);
-        } catch (e) {
-          console.warn("Could not load invoice remaining balance:", e);
-        }
-      }
-
       // Load existing file URLs if available
       if (data.deposit_slip) setExistingDepositSlip(data.deposit_slip);
       if (data.invoice_file) setExistingInvoiceFile(data.invoice_file);
       if (data.receipt_voucher) setExistingReceiptVoucher(data.receipt_voucher);
       if (data.bank_payment_attachments) setExistingBankPaymentAttachments(data.bank_payment_attachments);
       
-      // Load initial invoices for the project
+      // Load actual invoices for the project
       if (data.project) {
-        loadInitialInvoices(data.project);
-      }
-
-      // ✅ تحميل الرصيد المتبقي للفاتورة المبدئية المحددة
-      if (initialInvoiceId && data.project) {
-        try {
-          const invoiceResponse = await api.get(`projects/${data.project}/initial-invoices/${initialInvoiceId}/`);
-          const remaining = parseFloat(invoiceResponse.data.remaining_balance || invoiceResponse.data.amount || 0);
-          setSelectedInvoiceRemaining(remaining);
-        } catch (e) {
-          console.warn("Could not load invoice remaining balance:", e);
-        }
+        loadActualInvoices(data.project);
       }
     } catch (e) {
       console.error("Error loading payment:", e);
-      alert(t("load_error") || "Error loading payment");
+      alert(t("load_error"));
       navigate("/payments");
     } finally {
       setLoading(false);
@@ -205,7 +171,6 @@ export default function CreatePaymentPage() {
         formDataToSend.append("project", parseInt(formData.project));
       }
 
-      // ✅ إرسال actual_invoice_id بدلاً من initial_invoice_id
       if (formData.actual_invoice) {
         formDataToSend.append("actual_invoice", parseInt(formData.actual_invoice));
       }
@@ -318,7 +283,7 @@ export default function CreatePaymentPage() {
                       color: "#059669",
                       fontWeight: 500
                     }}>
-                      ✓ {t("linked_to_actual_invoice") || "مرتبطة بفاتورة فعلية"}
+                      ✓ {t("linked_to_invoice")}
                     </small>
                   )}
                 </div>
@@ -355,8 +320,8 @@ export default function CreatePaymentPage() {
                     }}
                     required
                   >
-                    <option value="owner">{t("payer_owner") || "Owner"}</option>
-                    <option value="bank">{t("payer_bank") || "Bank"}</option>
+                    <option value="owner">{t("payer_owner")}</option>
+                    <option value="bank">{t("payer_bank")}</option>
                   </select>
                 </div>
                 <div>
@@ -371,20 +336,20 @@ export default function CreatePaymentPage() {
                     required={formData.payer === "owner"}
                   >
                     {formData.payer === "bank" ? (
-                      <option value="bank_transfer">{t("payment_method_bank_transfer") || "Bank Transfer"}</option>
+                      <option value="bank_transfer">{t("payment_method_bank_transfer")}</option>
                     ) : (
                       <>
-                        <option value="">{t("select_payment_method") || "Select Payment Method"}</option>
-                        <option value="cash_deposit">{t("payment_method_cash_deposit") || "Cash Deposit in Company Bank Account"}</option>
-                        <option value="cash_office">{t("payment_method_cash_office") || "Cash Payment in Office"}</option>
-                        <option value="bank_transfer">{t("payment_method_bank_transfer") || "Bank Transfer"}</option>
-                        <option value="bank_cheque">{t("payment_method_bank_cheque") || "Bank Cheque"}</option>
+                        <option value="">{t("select_payment_method")}</option>
+                        <option value="cash_deposit">{t("payment_method_cash_deposit")}</option>
+                        <option value="cash_office">{t("payment_method_cash_office")}</option>
+                        <option value="bank_transfer">{t("payment_method_bank_transfer")}</option>
+                        <option value="bank_cheque">{t("payment_method_bank_cheque")}</option>
                       </>
                     )}
                   </select>
                   {formData.payer === "bank" && (
                     <small style={{ color: "var(--muted)", marginTop: "4px", display: "block" }}>
-                      {t("payment_bank_transfer_only") || "Bank payments must use Bank Transfer only."}
+                      {t("payment_bank_transfer_only")}
                     </small>
                   )}
                 </div>
@@ -404,14 +369,14 @@ export default function CreatePaymentPage() {
                     <option value="">{t("no_project")}</option>
                     {projects.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.display_name || p.name || `Project #${p.id}`}
+                        {p.display_name || p.name || `${t("project")} #${p.id}`}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <label style={{ display: "block", marginBottom: "8px", fontWeight: 500 }}>
-                    {t("actual_invoice") || "الفاتورة الفعلية"}
+                    {t("invoice")}
                   </label>
                   <select
                     className="prj-select"
@@ -419,7 +384,7 @@ export default function CreatePaymentPage() {
                     onChange={(e) => {
                       const invoiceId = e.target.value;
                       setFormData({ ...formData, actual_invoice: invoiceId });
-                      // ✅ تحديث المبلغ تلقائياً من الفاتورة الفعلية المختارة
+                      // تحديث المبلغ تلقائياً من الفاتورة المختارة
                       if (invoiceId) {
                         const selectedInvoice = actualInvoices.find(inv => inv.id === parseInt(invoiceId));
                         if (selectedInvoice) {
@@ -433,20 +398,20 @@ export default function CreatePaymentPage() {
                     }}
                     disabled={!formData.project}
                   >
-                    <option value="">{t("select_actual_invoice") || "اختر الفاتورة الفعلية"}</option>
+                    <option value="">{t("select_invoice")}</option>
                     {actualInvoices.map((invoice) => (
                       <option key={invoice.id} value={invoice.id}>
-                        {invoice.invoice_number || `Invoice #${invoice.id}`} - {formatMoney(invoice.amount)}
+                        {invoice.invoice_number || `${t("invoice")} #${invoice.id}`} - {formatMoney(invoice.amount)}
                       </option>
                     ))}
                   </select>
                   {actualInvoices.length === 0 && formData.project && (
                     <small style={{ color: "#dc2626", marginTop: "4px", display: "block" }}>
-                      {t("no_available_actual_invoices") || "لا توجد فواتير فعلية متاحة (جميع الفواتير مرتبطة بدفعات)"}
+                      {t("no_available_invoices")}
                     </small>
                   )}
                   <small style={{ color: "var(--muted)", marginTop: "4px", display: "block" }}>
-                    {t("actual_invoice_note") || "ربط هذه الدفعة بفاتورة فعلية (الفواتير المرتبطة بدفعات لا تظهر)"}
+                    {t("invoice_note")}
                   </small>
                 </div>
               </div>
@@ -455,12 +420,12 @@ export default function CreatePaymentPage() {
               {formData.payer === "bank" && (
                 <div style={{ marginBottom: "16px", padding: "16px", background: "#f8f9fa", borderRadius: "8px" }}>
                   <h3 style={{ marginBottom: "16px", fontSize: "16px", fontWeight: 600 }}>
-                    {t("bank_payment_details") || "تفاصيل دفعة البنك"}
+                    {t("bank_payment_details")}
                   </h3>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
                     <div>
                       <label style={{ display: "block", marginBottom: "8px", fontWeight: 500 }}>
-                        {t("project_financial_account") || "رقم الحساب المالي للمشروع"} *
+                        {t("project_financial_account")} *
                       </label>
                       <input
                         type="text"
@@ -474,16 +439,16 @@ export default function CreatePaymentPage() {
                           }
                           setFormData({ ...formData, project_financial_account: value });
                         }}
-                        placeholder={t("project_financial_account_placeholder") || "PRJ..."}
+                        placeholder={t("project_financial_account_placeholder")}
                         required
                       />
                       <small style={{ color: "var(--muted)", marginTop: "4px", display: "block" }}>
-                        {t("project_financial_account_note") || "يجب أن يبدأ بـ PRJ"}
+                        {t("project_financial_account_note")}
                       </small>
                     </div>
                     <div>
                       <label style={{ display: "block", marginBottom: "8px", fontWeight: 500 }}>
-                        {t("completion_percentage") || "نسبة الإنجاز"} *
+                        {t("completion_percentage")} *
                       </label>
                       <input
                         type="number"
@@ -493,7 +458,7 @@ export default function CreatePaymentPage() {
                         className="prj-input"
                         value={formData.completion_percentage}
                         onChange={(e) => setFormData({ ...formData, completion_percentage: e.target.value })}
-                        placeholder={t("completion_percentage_placeholder") || "أدخل نسبة الإنجاز (%)"}
+                        placeholder={t("completion_percentage_placeholder")}
                         required
                       />
                     </div>

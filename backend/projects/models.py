@@ -330,7 +330,14 @@ class SitePlan(TimeStampedModel):
     # Application / transaction info
     application_number = models.CharField(max_length=120, blank=True)
     application_date = models.DateField(null=True, blank=True)
-    application_file = models.FileField(upload_to="siteplans/applications/", null=True, blank=True)
+    
+    def get_application_file_path(instance, filename):
+        """حفظ ملف مخطط الأرض باسم ثابت داخل مجلد المشروع لتفادي إضافة لاحقة."""
+        ext = filename.split('.')[-1] if '.' in filename else 'pdf'
+        project_part = instance.project_id or "project"
+        return f"siteplans/applications/{project_part}/مخطط_الأرض.{ext}"
+    
+    application_file = models.FileField(upload_to=get_application_file_path, null=True, blank=True)
 
     def __str__(self):
         return f"SitePlan #{self.id} for {self.project.name or self.project_id}"
@@ -346,7 +353,15 @@ class SitePlanOwner(TimeStampedModel):
     id_number = models.CharField(max_length=50, blank=True)
     id_issue_date = models.DateField(null=True, blank=True)
     id_expiry_date = models.DateField(null=True, blank=True)
-    id_attachment = models.FileField(upload_to="owners/ids/", null=True, blank=True)
+    
+    def get_id_attachment_path(instance, filename):
+        """حفظ ملف بطاقة الهوية باسم ثابت داخل مجلد المالك/المشروع لتفادي إضافة لاحقة."""
+        ext = filename.split('.')[-1] if '.' in filename else 'pdf'
+        owner_index = getattr(instance, '_owner_index', instance.id if instance.id else 1)
+        siteplan_part = instance.siteplan_id or "siteplan"
+        return f"owners/ids/{siteplan_part}/بطاقة_الهوية_{owner_index}.{ext}"
+    
+    id_attachment = models.FileField(upload_to=get_id_attachment_path, null=True, blank=True)
     right_hold_type = models.CharField(max_length=120, blank=True, default="Ownership")
     share_possession = models.CharField(max_length=120, blank=True)
     share_percent = models.DecimalField(
@@ -379,7 +394,14 @@ class BuildingLicense(TimeStampedModel):
     technical_decision_ref = models.CharField(max_length=120, blank=True)
     technical_decision_date = models.DateField(null=True, blank=True)
     license_notes = models.TextField(blank=True)
-    building_license_file = models.FileField(upload_to="licenses/", null=True, blank=True)
+    
+    def get_building_license_file_path(instance, filename):
+        """حفظ ملف رخصة البناء باسم ثابت داخل مجلد المشروع لتفادي إضافة لاحقة."""
+        ext = filename.split('.')[-1] if '.' in filename else 'pdf'
+        project_part = instance.project_id or "project"
+        return f"licenses/{project_part}/رخصة_البناء.{ext}"
+    
+    building_license_file = models.FileField(upload_to=get_building_license_file_path, null=True, blank=True)
 
     # Plot / land data
     city = models.CharField(max_length=120, blank=True)
@@ -486,6 +508,13 @@ class Contract(TimeStampedModel):
     contract_appendix_file = models.FileField(upload_to="contracts/appendix/", null=True, blank=True)
     contract_explanation_file = models.FileField(upload_to="contracts/explanations/", null=True, blank=True)
     start_order_file = models.FileField(upload_to="contracts/start_orders/", null=True, blank=True)
+    
+    # ✅ المرفقات الثابتة
+    quantities_table_file = models.FileField(upload_to="contracts/quantities/", null=True, blank=True, help_text="جدول الكميات")
+    approved_materials_table_file = models.FileField(upload_to="contracts/materials/", null=True, blank=True, help_text="جدول المواد المعتمدة")
+    price_offer_file = models.FileField(upload_to="contracts/price_offer/", null=True, blank=True, help_text="عرض السعر")
+    contractual_drawings_file = models.FileField(upload_to="contracts/drawings/", null=True, blank=True, help_text="مخططات تعاقدية")
+    general_specifications_file = models.FileField(upload_to="contracts/specifications/", null=True, blank=True, help_text="المواصفات العامة والخاصة")
 
     def __str__(self):
         return f"Contract for {self.project.name or self.project_id}"
@@ -547,31 +576,10 @@ class Variation(TimeStampedModel):
 
 
 # ====== الفواتير ======
-class InitialInvoice(TimeStampedModel):
-    """Initial Invoice - reflects the full amount owed by the owner, including variations"""
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="initial_invoices")
-    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
-    stage = models.CharField(max_length=100, blank=True, help_text="Stage/Request identifier")
-    description = models.TextField(blank=True)
-    invoice_date = models.DateField()
-    invoice_number = models.CharField(max_length=100, blank=True, unique=True, null=True)
-    items = models.JSONField(default=list, blank=True, help_text="Invoice items: [{description, quantity, unit_price, total}]")
-
-    class Meta:
-        db_table = 'projects_initial_invoice'
-        verbose_name = 'Initial Invoice'
-        verbose_name_plural = 'Initial Invoices'
-        ordering = ['-invoice_date', '-created_at']
-
-    def __str__(self):
-        return f"Initial Invoice {self.invoice_number or self.id} - {self.amount}"
-
-
 class ActualInvoice(TimeStampedModel):
-    """Actual Invoice - reflects the actual amount paid by the owner (one per payment)"""
+    """Invoice - linked to payment"""
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="actual_invoices")
     payment = models.OneToOneField('Payment', on_delete=models.CASCADE, related_name="actual_invoice", null=True, blank=True)
-    initial_invoice = models.ForeignKey(InitialInvoice, on_delete=models.CASCADE, related_name="actual_invoices", null=True, blank=True)
     amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
     invoice_date = models.DateField()
     invoice_number = models.CharField(max_length=100, blank=True, unique=True, null=True)

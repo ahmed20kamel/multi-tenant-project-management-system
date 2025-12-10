@@ -8,7 +8,6 @@ from .views import (
     AwardingViewSet,
     PaymentViewSet,
     VariationViewSet,
-    InitialInvoiceViewSet,
     ActualInvoiceViewSet,
 )
 
@@ -54,13 +53,7 @@ variation_detail = VariationViewSet.as_view(
     {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
 )
 
-# Initial Invoice ⬇️
-initial_invoice_list = InitialInvoiceViewSet.as_view({"get": "list", "post": "create"})
-initial_invoice_detail = InitialInvoiceViewSet.as_view(
-    {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
-)
-
-# Actual Invoice ⬇️
+# Invoice ⬇️
 actual_invoice_list = ActualInvoiceViewSet.as_view({"get": "list", "post": "create"})
 actual_invoice_detail = ActualInvoiceViewSet.as_view(
     {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
@@ -95,8 +88,6 @@ urlpatterns = [
     path("projects/<int:project_pk>/variations/<int:pk>/", variation_detail, name="variation-detail"),
     
     # ✅ Invoice endpoints
-    path("projects/<int:project_pk>/initial-invoices/", initial_invoice_list, name="initial-invoice-list"),
-    path("projects/<int:project_pk>/initial-invoices/<int:pk>/", initial_invoice_detail, name="initial-invoice-detail"),
     path("projects/<int:project_pk>/actual-invoices/", actual_invoice_list, name="actual-invoice-list"),
     path("projects/<int:project_pk>/actual-invoices/<int:pk>/", actual_invoice_detail, name="actual-invoice-detail"),
 ]

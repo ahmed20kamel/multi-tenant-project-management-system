@@ -374,6 +374,13 @@ export default function PaymentsPage() {
                       <td>{payment.description || t("empty_value")}</td>
                       <td className="prj-actions">
                         <Button
+                          variant="primary"
+                          onClick={() => navigate(`/payments/${payment.id}/view`)}
+                          className="prj-btn prj-btn--primary"
+                        >
+                          {t("view")}
+                        </Button>
+                        <Button
                           variant="secondary"
                           onClick={() => navigate(`/payments/${payment.id}/edit`)}
                           className="prj-btn prj-btn--secondary"

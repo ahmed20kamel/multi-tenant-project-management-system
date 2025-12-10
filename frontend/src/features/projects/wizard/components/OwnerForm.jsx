@@ -108,18 +108,37 @@ export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, ca
 
       {!hideContactInfo && (
         <div className="form-grid cols-3 mt-8">
-          <Field label={t("phone")}>
+        <Field label={t("phone")}>
+          <div style={{ display: "flex", alignItems: "center", flexDirection: "row-reverse" }}>
+            <span
+              style={{
+                padding: "10px 12px",
+                background: "var(--surface-2)",
+                border: "1px solid var(--border)",
+                borderRadius: "8px",
+                minWidth: "70px",
+                textAlign: "center",
+                color: "var(--muted)",
+                marginRight: "8px",
+              }}
+            >
+              +971
+            </span>
             <input
               className="input"
               type="tel"
-              value={owner.phone}
+              value={owner.phone ? owner.phone.replace("+971", "") : ""}
               onChange={(e) => {
-                const formatted = formatUAEPhone(e.target.value);
+                const digits = e.target.value.replace(/\D/g, "");
+                const trimmed = digits.replace(/^0+/, "").slice(0, 9);
+                const formatted = trimmed ? `+971${trimmed}` : "";
                 onUpdate(index, "phone", formatted);
               }}
-              placeholder="+971XXXXXXXXX"
+              placeholder="XXXXXXXXX"
+              inputMode="numeric"
             />
-          </Field>
+          </div>
+        </Field>
           <Field label={t("email")}>
             <input
               className="input"

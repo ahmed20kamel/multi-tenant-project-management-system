@@ -736,6 +736,29 @@ html.theme-dark .dropdown-item:hover {
 
 /* Chips */
 .chips { display:flex; flex-wrap:wrap; gap:12px; }
+.contract-classification-grid { 
+  display: grid !important; 
+  grid-template-columns: repeat(2, 1fr) !important; 
+  gap: 12px; 
+}
+@media (max-width: 480px) {
+  .contract-classification-grid { 
+    grid-template-columns: 1fr !important; 
+  }
+}
+
+/* Project Setup Grid - كل اثنين في سطر */
+.project-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+@media (max-width: 768px) {
+  .project-setup-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .chip{ display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text); font-weight:800; cursor:pointer; transition:border .15s, background .15s, color .15s; }
 .chip:hover{ border-color: var(--primary); }
 .chip.active{ border-color: var(--primary); color: var(--primary); background: var(--primary-50); }

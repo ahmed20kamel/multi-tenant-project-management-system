@@ -38,6 +38,12 @@ export default function ProjectView() {
   const hasContract = !!contract;
   const hasAwarding = !!awarding;
   const isHousingLoan = contract?.contract_classification === "housing_loan_program";
+  const contractClassificationLabel =
+    contract?.contract_classification === "housing_loan_program"
+      ? t("contract.classification.housing_loan_program.label")
+      : contract?.contract_classification === "private_funding"
+      ? t("contract.classification.private_funding.label")
+      : t("empty_value");
 
   const titleText = project?.display_name || project?.name || t("wizard_project_prefix") + ` #${projectId}`;
   const projectTypeLabel = getProjectTypeLabel(project?.project_type, i18n.language);
@@ -145,6 +151,10 @@ export default function ProjectView() {
                   </div>
                 </div>
               )}
+              <div className="prj-info-item">
+                <div className="prj-info-label">{t("contract.sections.classification")}</div>
+                <div className="prj-info-value">{contractClassificationLabel}</div>
+              </div>
             </div>
           </Card>
 

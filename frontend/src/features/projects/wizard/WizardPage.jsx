@@ -118,20 +118,27 @@ export default function WizardPage() {
     (setup.villaCategory === "residential" || setup.villaCategory === "commercial") &&
     setup.contractType === "new";
 
-  // تحميل بيانات العقد لتحديد نوع التمويل
+  // تحميل بيانات العقد (contract_classification + بيانات إضافية)
   useEffect(() => {
-    if (isNewProject || !projectId || !allowSitePlanFlow) return;
+    if (isNewProject || !projectId) return;
     let mounted = true;
     (async () => {
       try {
         const { data } = await api.get(`projects/${projectId}/contract/`);
         if (mounted && Array.isArray(data) && data.length > 0) {
           setContract(data[0]);
+          // ✅ تحديث setup مع contract_classification من Contract
+          if (data[0].contract_classification) {
+            setSetup((prev) => ({
+              ...prev,
+              contractClassification: data[0].contract_classification,
+            }));
+          }
         }
       } catch {}
     })();
     return () => { mounted = false; };
-  }, [projectId, allowSitePlanFlow, isNewProject]);
+  }, [projectId, isNewProject, setSetup]);
 
   const labels = {
     setup: t("wizard_step_setup"),
@@ -144,9 +151,10 @@ export default function WizardPage() {
     infoNote: t("wizard_info_note"),
   };
 
-  // تحديد ما إذا كان التمويل خاص (يحتاج AwardingStep)
-  const isPrivateFunding = contract?.contract_classification === "private_funding";
-  const isHousingLoan = contract?.contract_classification === "housing_loan_program";
+  // ✅ تحديد ما إذا كان التمويل خاص (يحتاج AwardingStep) - من setup بدلاً من contract
+  const contractClassification = setup?.contractClassification || contract?.contract_classification;
+  const isPrivateFunding = contractClassification === "private_funding";
+  const isHousingLoan = contractClassification === "housing_loan_program";
 
   const STEPS = useMemo(() => {
     const base = [{ id: "setup", title: labels.setup, Component: ProjectSetupStep }];
@@ -159,17 +167,15 @@ export default function WizardPage() {
       { id: "contract", title: labels.contract, Component: ContractStep },
     ];
     
-    // إضافة AwardingStep فقط للقرض السكني (وليس للتمويل الخاص)
-    // إذا لم يكن هناك contract بعد، نضيف AwardingStep كخيار افتراضي
-    // إذا كان هناك contract وكان housing_loan، نضيف AwardingStep
-    // إذا كان هناك contract وكان private_funding، لا نضيف AwardingStep
-    const shouldAddAwardingStep = !contract || isHousingLoan;
-    if (shouldAddAwardingStep) {
+    // ✅ إضافة AwardingStep فقط للقرض السكني (housing_loan_program)
+    // إذا كان contract_classification === "housing_loan_program"، نضيف AwardingStep
+    // إذا كان contract_classification === "private_funding" أو غير محدد، لا نضيف AwardingStep
+    if (isHousingLoan) {
       steps.push({ id: "award", title: labels.award, Component: AwardingStep });
     }
     
     return steps;
-  }, [allowSitePlanFlow, contract, isHousingLoan, isPrivateFunding, labels.setup, labels.siteplan, labels.license, labels.contract, labels.award]);
+  }, [allowSitePlanFlow, isHousingLoan, labels.setup, labels.siteplan, labels.license, labels.contract, labels.award]);
 
   useEffect(() => {
     const wanted = STEP_INDEX[stepParam] ?? 0;

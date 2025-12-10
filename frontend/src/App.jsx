@@ -39,6 +39,7 @@ import ViewSummary from "./features/projects/view/ViewSummary";
 // ====== Payments Pages (صفحات المدفوعات) ======
 import PaymentsPage from "./features/payments/pages/PaymentsPage";
 import CreatePaymentPage from "./features/payments/pages/CreatePaymentPage";
+import ViewPaymentPage from "./features/payments/pages/ViewPaymentPage";
 
 // ====== Variations Pages ======
 import VariationsPage from "./features/variations/pages/VariationsPage";
@@ -47,16 +48,17 @@ import CreateVariationPage from "./features/variations/pages/CreateVariationPage
 // ====== Invoices Pages ======
 import InvoicesPage from "./features/invoices/pages/InvoicesPage";
 import InvoiceViewPage from "./features/invoices/pages/InvoiceViewPage";
-import CreateInitialInvoicePage from "./features/invoices/pages/CreateInitialInvoicePage";
 import CreateActualInvoicePage from "./features/invoices/pages/CreateActualInvoicePage";
 
 // ====== Owners Pages (صفحات الملاك) ======
 import OwnersPage from "./features/owners/pages/OwnersPage";
 import OwnerDetailPage from "./features/owners/pages/OwnerDetailPage";
+import EditOwnerPage from "./features/owners/pages/EditOwnerPage";
 
 // ====== Consultants Pages (صفحات الاستشاريين) ======
 import ConsultantsPage from "./features/consultants/pages/ConsultantsPage";
 import ConsultantDetailPage from "./features/consultants/pages/ConsultantDetailPage";
+import EditConsultantPage from "./features/consultants/pages/EditConsultantPage";
 
 // ====== Profile Pages (صفحات الملف الشخصي) ======
 import ProfilePage from "./features/profile/pages/ProfilePage";
@@ -104,6 +106,7 @@ export default function App() {
         {/* قائمة الدفعات */}
             <Route path="/payments" element={<ProtectedRoute><PaymentsPage /></ProtectedRoute>} />
             <Route path="/payments/create" element={<ProtectedRoute><CreatePaymentPage /></ProtectedRoute>} />
+            <Route path="/payments/:paymentId/view" element={<ProtectedRoute><ViewPaymentPage /></ProtectedRoute>} />
             <Route path="/payments/:paymentId/edit" element={<ProtectedRoute><CreatePaymentPage /></ProtectedRoute>} />
 
         {/* قائمة التعديلات */}
@@ -113,11 +116,9 @@ export default function App() {
 
         {/* قائمة الفواتير */}
             <Route path="/invoices" element={<ProtectedRoute><InvoicesPage /></ProtectedRoute>} />
-            <Route path="/invoices/initial/create" element={<ProtectedRoute><CreateInitialInvoicePage /></ProtectedRoute>} />
-            <Route path="/invoices/initial/:invoiceId/edit" element={<ProtectedRoute><CreateInitialInvoicePage /></ProtectedRoute>} />
-            <Route path="/invoices/actual/create" element={<ProtectedRoute><CreateActualInvoicePage /></ProtectedRoute>} />
-            <Route path="/invoices/actual/:invoiceId/edit" element={<ProtectedRoute><CreateActualInvoicePage /></ProtectedRoute>} />
-            <Route path="/invoices/:type/:invoiceId/view" element={<ProtectedRoute><InvoiceViewPage /></ProtectedRoute>} />
+            <Route path="/invoices/create" element={<ProtectedRoute><CreateActualInvoicePage /></ProtectedRoute>} />
+            <Route path="/invoices/:invoiceId/edit" element={<ProtectedRoute><CreateActualInvoicePage /></ProtectedRoute>} />
+            <Route path="/invoices/:invoiceId/view" element={<ProtectedRoute><InvoiceViewPage /></ProtectedRoute>} />
 
         {/* قائمة الملاك */}
             <Route path="/owners" element={<ProtectedRoute><OwnersPage /></ProtectedRoute>} />
@@ -152,7 +153,9 @@ export default function App() {
 
         {/* صفحات الملاك والاستشاريين */}
             <Route path="/owners/:ownerName" element={<ProtectedRoute><OwnerDetailPage /></ProtectedRoute>} />
+            <Route path="/owners/:ownerName/edit" element={<ProtectedRoute><EditOwnerPage /></ProtectedRoute>} />
             <Route path="/consultants/:consultantName" element={<ProtectedRoute><ConsultantDetailPage /></ProtectedRoute>} />
+            <Route path="/consultants/:consultantName/edit" element={<ProtectedRoute><EditConsultantPage /></ProtectedRoute>} />
             {/* <Route path="/contractors/:contractorName" element={<ProtectedRoute><ContractorDetailPage /></ProtectedRoute>} /> */}
 
             {/* صفحة الملف الشخصي */}

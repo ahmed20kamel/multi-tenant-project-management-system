@@ -19,6 +19,9 @@ import { getErrorMessage } from "../../../../utils/errorHandler";
 import { toApiDateUnified, toInputDateUnified } from "../../../../utils/dateHelpers";
 import { extractFileNameFromUrl } from "../../../../utils/fileHelpers";
 import { toLocalizedUse } from "../../../../utils/licenseHelpers";
+import { formatDate } from "../../../../utils/formatters";
+import InfoTip from "../components/InfoTip";
+import { renameFileForUpload } from "../../../../utils/fileNaming";
 
 export default function SitePlanStep({ 
   projectId, 
@@ -83,6 +86,36 @@ export default function SitePlanStep({
 
   console.log("OwnerFileUrls:", ownerFileUrls);
   console.log("OwnerFileNames:", ownerFileNames);
+
+  // توليد رقم المعاملة تلقائياً عند تغيير تاريخ المعاملة
+  // السنة تذهب تلقائياً بعد "/" في رقم المعاملة
+  useEffect(() => {
+    if (form.application_date && !viewMode) {
+      const date = new Date(form.application_date);
+      const year = date.getFullYear();
+      const currentNumber = form.application_number || "";
+      
+      // استخراج الرقم بعد "/" إذا كان موجوداً
+      const parts = currentNumber.split('/');
+      const numberAfterSlash = parts.length > 1 ? parts[1] : "";
+      
+      // إذا كان رقم المعاملة فارغاً أو لا يحتوي على "/"، نولد تلقائياً: {year}/
+      if (!currentNumber.trim() || !currentNumber.includes('/')) {
+        setF("application_number", `${year}/`);
+      } 
+      // إذا كان رقم المعاملة موجوداً لكن السنة مختلفة، نستبدل السنة فقط ونحتفظ بالرقم بعد "/"
+      else {
+        const currentYear = parts[0];
+        if (currentYear !== year.toString()) {
+          // تحديث السنة فقط مع الحفاظ على الرقم بعد "/"
+          setF("application_number", `${year}/${numberAfterSlash}`);
+        } else if (!numberAfterSlash && currentNumber.endsWith('/')) {
+          // إذا كانت السنة صحيحة لكن لا يوجد رقم بعد "/"، نتركها كما هي
+          // (المستخدم سيدخل الرقم يدوياً)
+        }
+      }
+    }
+  }, [form.application_date, viewMode, setF]);
 
   // Options (Municipality & Zones)
   const municipalityOptions = useMemo(
@@ -317,8 +350,11 @@ export default function SitePlanStep({
       // 🔥 File Upload
       // -----------------------------------------------------
       if (o.id_attachment instanceof File) {
-        console.log(`Uploading NEW file for owner ${idx}:`, o.id_attachment.name);
-        fd.append(`owners[${idx}][id_attachment]`, o.id_attachment, o.id_attachment.name);
+        // تسمية الملف باسم موحد حسب نص الحقل
+        const labelText = t("id_attachment") || "إرفاق الهوية";
+        const renamedFile = renameFileForUpload(o.id_attachment, 'id_attachment', idx, labelText);
+        console.log(`Uploading NEW file for owner ${idx}: ${o.id_attachment.name} -> ${renamedFile.name}`);
+        fd.append(`owners[${idx}][id_attachment]`, renamedFile, renamedFile.name);
       } else if (o.id_attachment && typeof o.id_attachment === "string") {
         // ✅ إذا كان ملف موجود (URL string)، لا نرسل شيء - الباك إند سيحافظ عليه
         console.log(`Keeping existing file for owner ${idx}:`, o.id_attachment);
@@ -338,8 +374,11 @@ export default function SitePlanStep({
     // إذا كان الملف مرفوعاً مسبقاً (URL)، لا نرسله مرة أخرى
     // إذا كان File جديد، نرسله
     if (form.application_file instanceof File) {
-      console.log("Uploading NEW application file:", form.application_file.name);
-      fd.append("application_file", form.application_file);
+      // تسمية الملف باسم موحد حسب نص الحقل
+      const labelText = t("attach_land_site_plan") || "إرفاق مخطط الأرض";
+      const renamedFile = renameFileForUpload(form.application_file, 'application_file', 0, labelText);
+      console.log("Uploading NEW application file:", form.application_file.name, "->", renamedFile.name);
+      fd.append("application_file", renamedFile, renamedFile.name);
     } else if (form.application_file && typeof form.application_file === 'string') {
       // إذا كان URL (ملف مرفوع مسبقاً في الخلفية)، لا نرسل شيء - الباك إند سيحافظ عليه
       // أو يمكن إرسال URL كحقل نصي إذا كان الباك إند يدعم ذلك
@@ -592,7 +631,13 @@ export default function SitePlanStep({
           <ViewRow label={t("land_no")} value={form.land_no} />
           <ViewRow label={t("allocation_type")} value={toLocalizedUse(form.allocation_type, i18n.language)} />
           <ViewRow label={t("land_use")} value={toLocalizedUse(form.land_use, i18n.language)} />
-          <ViewRow label={t("allocation_date")} value={form.allocation_date} />
+          {form.allocation_date && (
+            <ViewRow 
+              label={t("allocation_date")} 
+              value={formatDate(form.allocation_date, i18n.language)}
+              tip={t("allocation_date_note") || "تاريخ تخصيص الأرض من البلدية"}
+            />
+          )}
         </div>
       ) : (
         <div className="form-grid cols-4">
@@ -717,7 +762,12 @@ export default function SitePlanStep({
               <option value="Investment">{t("investment")}</option>
             </select>
           </Field>
-          <Field label={t("allocation_date")}>
+          <Field label={
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span>{t("allocation_date")}</span>
+              <InfoTip align="start" text={t("allocation_date_note")} />
+            </div>
+          }>
             <input
               className="input"
               type="date"
@@ -730,15 +780,23 @@ export default function SitePlanStep({
       </div>
 
       {/* 2) بيانات المطور */}
-      {form.land_use === "Investment" && (
+      {(form.land_use === "Investment" || (viewMode && (form.developer_name || form.project_no || form.project_name))) && (
         <>
           <div className="wizard-section">
             <h4 className="wizard-section-title">{t("developer_details")}</h4>
             {viewMode ? (
             <div className="form-grid cols-3">
-              <ViewRow label={t("developer_name")} value={form.developer_name} />
-              <ViewRow label={projectNoLabel} value={form.project_no} />
-              <ViewRow label={projectNameLabel} value={form.project_name} />
+              {(form.developer_name || form.project_no || form.project_name) ? (
+                <>
+                  {form.developer_name && <ViewRow label={t("developer_name")} value={form.developer_name} />}
+                  {form.project_no && <ViewRow label={projectNoLabel} value={form.project_no} />}
+                  {form.project_name && <ViewRow label={projectNameLabel} value={form.project_name} />}
+                </>
+              ) : (
+                <div className="card text-center prj-muted p-20">
+                  {t("no_developer_data") || "لا توجد بيانات المطور"}
+                </div>
+              )}
             </div>
           ) : (
             <div className="form-grid cols-3">
@@ -772,7 +830,7 @@ export default function SitePlanStep({
 
       {/* 3) معلومات المالك */}
       <div className="wizard-section">
-        <h4 className="wizard-section-title">{t("owner_details")}</h4>
+        <h4 className="wizard-section-title">{t("owner_details_by_id_card")}</h4>
         {viewMode ? (
         <div className="stack">
           {owners.length === 0 ? (
@@ -851,19 +909,60 @@ export default function SitePlanStep({
         </div>
       ) : (
         <div className="form-grid cols-3">
-          <Field label={t("application_number")}>
-            <input
-              className="input"
-              value={form.application_number}
-              onChange={(e) => setF("application_number", e.target.value)}
-            />
-          </Field>
           <Field label={t("application_date")}>
             <input
               className="input"
               type="date"
               value={form.application_date || ""}
-              onChange={(e) => setF("application_date", e.target.value)}
+              onChange={(e) => {
+                setF("application_date", e.target.value);
+                // عند تغيير التاريخ، نحدث رقم المعاملة تلقائياً
+                if (e.target.value) {
+                  const date = new Date(e.target.value);
+                  const year = date.getFullYear();
+                  const currentNumber = form.application_number || "";
+                  
+                  // إذا كان رقم المعاملة فارغاً أو لا يحتوي على "/"، نضيف السنة + "/"
+                  if (!currentNumber.trim() || !currentNumber.includes('/')) {
+                    setF("application_number", `${year}/`);
+                  } else {
+                    // إذا كان موجوداً، نستبدل السنة فقط
+                    const parts = currentNumber.split('/');
+                    const numberAfterSlash = parts.length > 1 ? parts[1] : "";
+                    setF("application_number", `${year}/${numberAfterSlash}`);
+                  }
+                }
+              }}
+            />
+          </Field>
+          <Field label={
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span>{t("application_number")}</span>
+              {!form.application_date && (
+                <InfoTip align="start" text="برجاء إدخال التاريخ أولاً" />
+              )}
+            </div>
+          }>
+            <input
+              className="input"
+              value={form.application_number}
+              onChange={(e) => {
+                let value = e.target.value;
+                // إذا كان المستخدم يحاول حذف "/" بعد السنة، نمنعه
+                const year = form.application_date ? new Date(form.application_date).getFullYear().toString() : "";
+                if (year && value.startsWith(year) && !value.includes('/')) {
+                  // إذا كانت السنة موجودة لكن "/" محذوف، نضيفه تلقائياً
+                  value = `${year}/`;
+                }
+                setF("application_number", value);
+              }}
+              placeholder={form.application_date ? `${new Date(form.application_date).getFullYear()}/` : "YYYY/رقم"}
+              disabled={!form.application_date}
+              dir="rtl"
+              style={{
+                cursor: !form.application_date ? "not-allowed" : "text",
+                opacity: !form.application_date ? 0.6 : 1
+              }}
             />
           </Field>
           <Field label={t("attach_land_site_plan")}>
@@ -872,7 +971,11 @@ export default function SitePlanStep({
               onChange={(file) => {
                 setF("application_file", file);
                 if (file) {
-                  setApplicationFileName(file.name);
+                  // استخدام الاسم الموحد بدلاً من الاسم الأصلي
+                  const { getStandardFileName } = require("../../../../utils/fileNaming");
+                  const originalExtension = file.name.substring(file.name.lastIndexOf('.'));
+                  const standardFileName = getStandardFileName('application_file', 0, originalExtension);
+                  setApplicationFileName(standardFileName);
                 } else {
                   setUploadedApplicationFileUrl(null);
                 }
@@ -889,6 +992,7 @@ export default function SitePlanStep({
                 setApplicationFileName("");
                 setUploadedApplicationFileUrl(null);
               }}
+              fileType="application_file"
               compressionOptions={{
                 maxSizeMB: 1,
                 maxWidthOrHeight: 1920,

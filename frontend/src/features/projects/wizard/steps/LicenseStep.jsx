@@ -21,6 +21,7 @@ import { getErrorMessage } from "../../../../utils/errorHandler";
 import { toLocalizedUse, isRO } from "../../../../utils/licenseHelpers";
 import { saveToList } from "../../../../utils/localStorage";
 import { extractFileNameFromUrl } from "../../../../utils/fileHelpers";
+import { getStandardFileName, renameFileForUpload } from "../../../../utils/fileNaming";
 
 export default function LicenseStep({ projectId, onPrev, onNext, isView: isViewProp }) {
   const { t, i18n } = useTranslation();
@@ -216,8 +217,11 @@ export default function LicenseStep({ projectId, onPrev, onNext, isView: isViewP
     // ✅ لا نرسل owners - الرخصة تأخذ الملاك من السايت بلان تلقائياً
     // هذا يضمن أن الملاك موحدة في كل النظام
 
-    if (form.building_license_file) {
-      fd.append("building_license_file", form.building_license_file);
+    if (form.building_license_file instanceof File) {
+      // تسمية الملف باسم موحد حسب نص الحقل
+      const labelText = t("attach_building_license") || "إرفاق رخصة البناء";
+      const renamedFile = renameFileForUpload(form.building_license_file, 'building_license_file', 0, labelText);
+      fd.append("building_license_file", renamedFile, renamedFile.name);
     }
     return fd;
   };
@@ -427,11 +431,16 @@ export default function LicenseStep({ projectId, onPrev, onNext, isView: isViewP
                   <InfoTip align="start" text={t("please_attach_building_license")} />
                 </div>
                 {/* عرض الملف الجديد المختار */}
-                {form.building_license_file && form.building_license_file instanceof File && (
-                  <div className="mini mt-8 text-primary">
-                    {t("file_selected")}: {form.building_license_file.name}
-                  </div>
-                )}
+                {form.building_license_file && form.building_license_file instanceof File && (() => {
+                  // استخدام دالة getStandardFileName من fileNaming
+                  const originalExtension = form.building_license_file.name.substring(form.building_license_file.name.lastIndexOf('.'));
+                  const standardFileName = getStandardFileName('building_license_file', 0, originalExtension);
+                  return (
+                    <div className="mini mt-8 text-primary">
+                      {t("file_selected")}: {standardFileName}
+                    </div>
+                  );
+                })()}
               </div>
             </Field>
           </div>

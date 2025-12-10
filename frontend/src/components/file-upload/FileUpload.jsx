@@ -1,8 +1,10 @@
 // frontend/src/components/FileUpload.jsx
 import { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { FaFile, FaCheckCircle, FaTimes } from 'react-icons/fa';
 import { processFileForUpload, formatFileSize, validateFileSize } from '../../utils/fileCompression';
 import Button from '../common/Button';
+import { getStandardFileName } from '../../utils/fileNaming';
 import './FileUpload.css';
 
 /**
@@ -11,6 +13,7 @@ import './FileUpload.css';
  * - شريط تقدم
  * - معاينة الملف
  * - التحقق من الحجم والنوع
+ * - تصميم محسّن بدون عرض اسم الملف
  */
 export default function FileUpload({
   value, // File أو null
@@ -26,6 +29,8 @@ export default function FileUpload({
   existingFileName,
   onRemoveExisting,
   className = "",
+  fileType = "attachment", // نوع الملف لتحديد الاسم الموحد
+  fileIndex = 0, // الفهرس للملفات المتعددة
 }) {
   const { t } = useTranslation();
   const [isProcessing, setIsProcessing] = useState(false);
@@ -55,7 +60,9 @@ export default function FileUpload({
       setError('');
     } catch (err) {
       console.error('خطأ في معالجة الملف:', err);
-      setError(t('file_processing_error') || 'حدث خطأ في معالجة الملف');
+      // في حال فشل المعالجة، نستخدم الملف الأصلي بدون إظهار خطأ أحمر
+      onChange(file);
+      setError('');
     } finally {
       setIsProcessing(false);
       // إعادة تعيين input للسماح باختيار نفس الملف مرة أخرى
@@ -77,6 +84,12 @@ export default function FileUpload({
     }
   };
 
+  const handleInputClick = () => {
+    if (!disabled && !isProcessing && fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
   return (
     <div className={`file-upload-wrapper ${className}`}>
       {label && <label className="field-label">{label}</label>}
@@ -84,43 +97,80 @@ export default function FileUpload({
       {/* الملف الموجود سابقاً */}
       {existingFileUrl && !value && (
         <div className="existing-file-info">
-          <div className="file-info">
-            <span className="file-name">
-              {t('current_file') || 'الملف الحالي'}: {existingFileName || 'ملف'}
-            </span>
-            {onRemoveExisting && (
+          <div className="file-info-row">
+            <div className="file-icon-text">
+              <FaFile className="file-icon" />
+              <span className="file-status-text">{t('current_file') || 'الملف الحالي'}</span>
+            </div>
+            <div className="file-actions">
               <Button
-                variant="ghost"
+                variant="secondary"
                 type="button"
-                onClick={handleRemoveExisting}
-                className="remove-file-btn"
+                onClick={handleInputClick}
+                className="replace-file-btn"
+                size="small"
+                disabled={disabled || isProcessing}
               >
-                {t('remove') || 'إزالة'}
+                {t('replace_file') || 'استبدال'}
               </Button>
-            )}
+              {onRemoveExisting && (
+                <Button
+                  variant="ghost"
+                  type="button"
+                  onClick={handleRemoveExisting}
+                  className="remove-file-btn"
+                  size="small"
+                >
+                  <FaTimes />
+                </Button>
+              )}
+            </div>
           </div>
+          {/* Input مخفي للاستبدال */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={accept}
+            onChange={handleFileSelect}
+            disabled={disabled || isProcessing}
+            className="file-input-hidden"
+          />
         </div>
       )}
 
       {/* الملف الجديد المختار */}
       {value instanceof File && (
         <div className="selected-file-info">
-          <div className="file-info">
-            <div className="file-details">
-              <span className="file-name">
-                {t('file_selected') || 'الملف المختار'}: {value.name}
-              </span>
-              <span className="file-size">{formatFileSize(value.size)}</span>
+          <div className="file-info-row">
+            <div className="file-icon-text">
+              <FaCheckCircle className="file-icon file-icon-success" />
+              <div className="file-status-group">
+                <span className="file-status-text">{t('file_selected') || 'تم اختيار الملف'}</span>
+                <span className="file-size">{formatFileSize(value.size)}</span>
+              </div>
             </div>
-            <Button
-              variant="ghost"
-              type="button"
-              onClick={handleRemove}
-              className="remove-file-btn"
-              disabled={isProcessing}
-            >
-              {t('remove') || 'إزالة'}
-            </Button>
+            <div className="file-actions">
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={handleInputClick}
+                className="replace-file-btn"
+                size="small"
+                disabled={disabled || isProcessing}
+              >
+                {t('replace_file') || 'استبدال'}
+              </Button>
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={handleRemove}
+                className="remove-file-btn"
+                disabled={isProcessing}
+                size="small"
+              >
+                <FaTimes />
+              </Button>
+            </div>
           </div>
           {showPreview && value.type.startsWith('image/') && (
             <div className="file-preview">
@@ -131,25 +181,41 @@ export default function FileUpload({
               />
             </div>
           )}
+          {/* Input مخفي للاستبدال */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={accept}
+            onChange={handleFileSelect}
+            disabled={disabled || isProcessing}
+            className="file-input-hidden"
+          />
         </div>
       )}
 
-      {/* Input رفع الملف */}
-      <div className="file-input-wrapper">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={accept}
-          onChange={handleFileSelect}
-          disabled={disabled || isProcessing}
-          className="file-input"
-        />
-        {isProcessing && (
-          <div className="processing-indicator">
-            <span>{t('processing_file') || 'جاري معالجة الملف...'}</span>
+      {/* Input رفع الملف - يظهر فقط إذا لم يكن هناك ملف موجود أو جديد */}
+      {!value && !existingFileUrl && (
+        <div className="file-input-wrapper" onClick={handleInputClick}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={accept}
+            onChange={handleFileSelect}
+            disabled={disabled || isProcessing}
+            className="file-input-hidden"
+          />
+          <div className="file-input-display">
+            <FaFile className="file-input-icon" />
+            <span className="file-input-text">
+              {isProcessing 
+                ? (t('processing_file') || 'جاري معالجة الملف...')
+                : (t('select_file') || 'اختر ملف')
+              }
+            </span>
+            <span className="file-input-browse">{t('browse') || 'تصفح'}</span>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* رسالة الخطأ */}
       {error && (
@@ -165,4 +231,3 @@ export default function FileUpload({
     </div>
   );
 }
-

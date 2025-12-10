@@ -23,6 +23,8 @@ export default function FileUploadWithProgressBar({
   existingFileName,
   onRemoveExisting,
   className = "",
+  fileType = "attachment", // نوع الملف لتحديد الاسم الموحد
+  fileIndex = 0, // الفهرس للملفات المتعددة
 }) {
   return (
     <div className={`file-upload-with-progress-bar ${className}`}>
@@ -38,6 +40,8 @@ export default function FileUploadWithProgressBar({
         existingFileUrl={existingFileUrl}
         existingFileName={existingFileName}
         onRemoveExisting={onRemoveExisting}
+        fileType={fileType}
+        fileIndex={fileIndex}
       />
 
       {/* شريط التقدم أثناء الرفع */}

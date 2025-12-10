@@ -119,9 +119,12 @@ export default function UnifiedSelect({
         isSearchable={isSearchable}
         isLoading={isLoading}
         menuPortalTarget={document.body}
-        noOptionsMessage={({ inputValue }) =>
-          noOptionsMessage || (inputValue ? t("no_options_found") || "No options found" : t("no_options") || "No options")
-        }
+        noOptionsMessage={({ inputValue }) => {
+          if (typeof noOptionsMessage === 'function') {
+            return noOptionsMessage({ inputValue });
+          }
+          return noOptionsMessage || (inputValue ? t("no_options_found") || "No options found" : t("no_options") || "No options");
+        }}
         styles={customStyles}
       />
     </div>
