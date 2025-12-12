@@ -14,6 +14,7 @@ import RtlSelect from "../../../../components/forms/RtlSelect";
 import InfoTip from "../components/InfoTip";
 import Button from "../../../../components/common/Button";
 import FileAttachmentView from "../../../../components/file-upload/FileAttachmentView";
+import FileUpload from "../../../../components/file-upload/FileUpload";
 import useLicense, { normalizeOwner } from "../../../../hooks/useLicense";
 import { toIsoDate, formatProjectNumber } from "../../../../utils/formatters";
 import { formatLicenseServerErrors } from "../../../../utils/errors/licenseErrorFormatter";
@@ -415,33 +416,21 @@ export default function LicenseStep({ projectId, onPrev, onNext, isView: isViewP
               />
             </Field>
             <Field label={t("attach_building_license")}>
-              <div>
-                {/* عرض الملف المرفق سابقاً إذا كان موجوداً */}
-                {buildingLicenseFileUrl && !form.building_license_file && (
-                  <div className="mini mb-8">
-                    {t("current_file")}: {extractFileNameFromUrl(buildingLicenseFileUrl)}
-                  </div>
-                )}
-                <div className="row row--align-center row--gap-8">
-                  <input
-                    className="input"
-                    type="file"
-                    onChange={(e) => setF("building_license_file", e.target.files?.[0] || null)}
-                  />
-                  <InfoTip align="start" text={t("please_attach_building_license")} />
-                </div>
-                {/* عرض الملف الجديد المختار */}
-                {form.building_license_file && form.building_license_file instanceof File && (() => {
-                  // استخدام دالة getStandardFileName من fileNaming
-                  const originalExtension = form.building_license_file.name.substring(form.building_license_file.name.lastIndexOf('.'));
-                  const standardFileName = getStandardFileName('building_license_file', 0, originalExtension);
-                  return (
-                    <div className="mini mt-8 text-primary">
-                      {t("file_selected")}: {standardFileName}
-                    </div>
-                  );
-                })()}
-              </div>
+              <FileUpload
+                value={form.building_license_file}
+                onChange={(file) => setF("building_license_file", file)}
+                accept=".pdf,.jpg,.jpeg,.png"
+                maxSizeMB={10}
+                showPreview={true}
+                existingFileUrl={buildingLicenseFileUrl}
+                existingFileName={buildingLicenseFileUrl ? extractFileNameFromUrl(buildingLicenseFileUrl) : ""}
+                onRemoveExisting={() => {
+                  setBuildingLicenseFileUrl("");
+                  setF("building_license_file", null);
+                }}
+                fileType="building_license_file"
+                fileIndex={0}
+              />
             </Field>
           </div>
         )}

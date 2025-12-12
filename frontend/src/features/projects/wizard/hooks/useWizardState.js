@@ -23,9 +23,9 @@ export default function useWizardState() {
       const saved = localStorage.getItem(STORAGE_KEY);
       return saved
         ? JSON.parse(saved)
-        : { projectType: "", villaCategory: "", contractType: "" };
+        : { projectType: "", villaCategory: "", contractType: "", contractClassification: "" };
     } catch {
-      return { projectType: "", villaCategory: "", contractType: "" };
+      return { projectType: "", villaCategory: "", contractType: "", contractClassification: "" };
     }
   });
 

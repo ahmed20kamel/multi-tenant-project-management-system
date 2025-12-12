@@ -6,7 +6,7 @@ export default function SetupSummary({ setup }) {
   const isRTL = i18n.language === "ar";
 
   if (!setup) return null;
-  const { projectType, villaCategory, contractType } = setup;
+  const { projectType, villaCategory, contractType, contractClassification } = setup;
 
   // ✅ استخدم i18n فقط لضمان أن اللغة دايمًا تطابق الواجهة
   const projectTypeText =
@@ -35,6 +35,13 @@ export default function SetupSummary({ setup }) {
       ? t("contract_continue")
       : "";
 
+  const contractClassificationText =
+    contractClassification === "housing_loan_program"
+      ? t("contract.classification.housing_loan_program.label")
+      : contractClassification === "private_funding"
+      ? t("contract.classification.private_funding.label")
+      : "";
+
   const items = [];
 
   if (projectType) {
@@ -57,6 +64,14 @@ export default function SetupSummary({ setup }) {
     items.push(
       <span key="contract" className="badge">
         <b>{t("setup_contract_type_title")}:</b>&nbsp;{contractTypeText}
+      </span>
+    );
+  }
+
+  if (contractClassification) {
+    items.push(
+      <span key="classification" className="badge">
+        <b>{t("contract.sections.classification")}:</b>&nbsp;{contractClassificationText}
       </span>
     );
   }

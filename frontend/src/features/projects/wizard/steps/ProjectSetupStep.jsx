@@ -57,20 +57,23 @@ export default function ProjectSetupStep({
         
         if (Array.isArray(data) && data.length > 0 && data[0].contract_classification) {
           const classification = data[0].contract_classification;
-          // ✅ تحديث فقط إذا كانت القيمة مختلفة
-          if (classification !== (value?.contractClassification || "")) {
+          // ✅ تحديث فقط إذا كانت القيمة مختلفة أو غير موجودة
+          const currentClassification = value?.contractClassification || "";
+          if (classification !== currentClassification) {
             onChange({ ...value, contractClassification: classification });
           }
         } else {
-          // ✅ إذا لم يكن هناك contract أو classification، نزيل القيمة
+          // ✅ إذا لم يكن هناك contract أو classification، نزيل القيمة فقط إذا كانت موجودة
           if (value?.contractClassification) {
             onChange({ ...value, contractClassification: "" });
           }
         }
       } catch (e) {
         // إذا لم يكن هناك contract بعد، لا بأس
-        // لكن نزيل contractClassification من state إذا كان موجود
-        if (value?.contractClassification) {
+        // لكن نزيل contractClassification من state فقط إذا كان موجوداً ولم يكن هناك contract
+        // لا نزيله إذا كان موجوداً في value (قد يكون تم تعيينه من مكان آخر)
+        if (value?.contractClassification && e?.response?.status === 404) {
+          // فقط إذا كان الخطأ 404 (لا يوجد contract)، نزيل القيمة
           onChange({ ...value, contractClassification: "" });
         }
       }
@@ -121,11 +124,13 @@ export default function ProjectSetupStep({
         if (!mounted) return;
         
         // ✅ تحديث الحالة بالبيانات من الـ backend فقط إذا كانت مختلفة
+        // ✅ الحفاظ على contractClassification الموجود في value
         const newData = {
           projectType: data?.project_type || "",
           villaCategory: data?.villa_category || "",
           contractType: data?.contract_type || "",
           internalCode: data?.internal_code || "",
+          contractClassification: value?.contractClassification || "",
         };
         
         // ✅ تحديث فقط إذا كانت البيانات مختلفة
@@ -208,10 +213,11 @@ export default function ProjectSetupStep({
 
     // ✅ إذا كان مشروع جديد، نحفظ البيانات مؤقتاً فقط وننتقل للخطوة التالية
     if (isNewProject) {
-      // تحديث setup مع الكود الداخلي
+      // ✅ تحديث setup مع الكود الداخلي و contractClassification (إذا كان موجوداً)
       onChange({
         ...value,
         internalCode: formatted,
+        contractClassification: contractClassification || value?.contractClassification || "",
       });
       
       if (onNext && canProceed) {
@@ -247,16 +253,22 @@ export default function ProjectSetupStep({
             await api.patch(`projects/${projectId}/contract/${contractRes.data[0].id}/`, {
               contract_classification: contractClassification,
             });
+            console.log("✅ contract_classification updated in existing contract:", contractClassification);
           } else {
             // إنشاء contract جديد
             await api.post(`projects/${projectId}/contract/`, {
               contract_classification: contractClassification,
             });
+            console.log("✅ contract_classification saved in new contract:", contractClassification);
           }
+          // ✅ تحديث contractClassification في value (setup) مباشرة بعد الحفظ الناجح
+          onChange({ ...value, contractClassification });
         } catch (e) {
-          console.error("Error saving contract classification:", e);
+          console.error("❌ Error saving contract classification:", e);
           // لا نوقف العملية إذا فشل حفظ contract_classification
         }
+      } else {
+        console.warn("⚠️ contractClassification is empty, skipping save");
       }
 
       // في حالة صفحة العرض: نسمح للأب بإعادة تحميل بيانات المشروع من الـ backend

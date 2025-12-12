@@ -66,6 +66,8 @@ export default function useContract(projectId) {
           setForm((prev) => ({
             ...prev,
             ...s,
+            // ✅ التأكد من تحميل contract_classification بشكل صريح
+            contract_classification: s.contract_classification || prev.contract_classification || "",
             contract_date: toInputDate(s.contract_date) || prev.contract_date || todayIso(),
             owner_includes_consultant: toYesNo(s.owner_includes_consultant),
             bank_includes_consultant: toYesNo(s.bank_includes_consultant),

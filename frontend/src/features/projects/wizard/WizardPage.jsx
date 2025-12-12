@@ -66,19 +66,39 @@ export default function WizardPage() {
       }
     };
     
+    // ✅ معالج خاص لتحديث contract_classification في setup عند تحديث العقد
+    const handleContractUpdate = async (event) => {
+      if (event.detail?.projectId === projectId) {
+        try {
+          const { data } = await api.get(`projects/${projectId}/contract/`);
+          if (Array.isArray(data) && data.length > 0 && data[0].contract_classification) {
+            // ✅ تحديث contractClassification في setup
+            setSetup((prev) => ({
+              ...prev,
+              contractClassification: data[0].contract_classification,
+            }));
+          }
+        } catch (e) {
+          console.error("Error updating contract classification:", e);
+        }
+        // ✅ إعادة تحميل البيانات
+        reload();
+      }
+    };
+    
     // ✅ الاستماع لجميع أحداث التحديث
     window.addEventListener("license-updated", handleDataUpdate);
-    window.addEventListener("contract-updated", handleDataUpdate);
+    window.addEventListener("contract-updated", handleContractUpdate);
     window.addEventListener("awarding-updated", handleDataUpdate);
     window.addEventListener("siteplan-owners-updated", handleDataUpdate);
     
     return () => {
       window.removeEventListener("license-updated", handleDataUpdate);
-      window.removeEventListener("contract-updated", handleDataUpdate);
+      window.removeEventListener("contract-updated", handleContractUpdate);
       window.removeEventListener("awarding-updated", handleDataUpdate);
       window.removeEventListener("siteplan-owners-updated", handleDataUpdate);
     };
-  }, [projectId, isNewProject, reload]);
+  }, [projectId, isNewProject, reload, setSetup]);
 
   useEffect(() => {
     if (isNewProject) {
@@ -88,6 +108,7 @@ export default function WizardPage() {
         villaCategory: "",
         contractType: "",
         internalCode: "",
+        contractClassification: "",
       });
       // مسح localStorage للويزارد
       try {
@@ -100,12 +121,14 @@ export default function WizardPage() {
       try {
         const { data } = await api.get(`projects/${projectId}/`);
         setProject(data);
-        setSetup({
+        // ✅ الحفاظ على contractClassification الموجود في setup عند تحديث البيانات
+        setSetup((prev) => ({
           projectType: data?.project_type || "",
           villaCategory: data?.villa_category || "",
           contractType: data?.contract_type || "",
           internalCode: data?.internal_code || "",
-        });
+          contractClassification: prev?.contractClassification || "",
+        }));
       } catch {}
     })();
   }, [projectId, setSetup, isNewProject]);
@@ -245,7 +268,22 @@ export default function WizardPage() {
         await api.post(`projects/${newProjectId}/siteplan/`, sitePlanPayload, config);
       }
       
-      // 3. الانتقال إلى صفحة الويزارد بالمشروع الجديد
+      // 3. ✅ حفظ contract_classification في Contract (إذا كان موجوداً)
+      if (setupData.contractClassification) {
+        try {
+          await api.post(`projects/${newProjectId}/contract/`, {
+            contract_classification: setupData.contractClassification,
+          });
+          console.log("✅ contract_classification saved during project creation:", setupData.contractClassification);
+        } catch (e) {
+          console.error("❌ Error saving contract classification during project creation:", e);
+          // لا نوقف العملية إذا فشل حفظ contract_classification
+        }
+      } else {
+        console.warn("⚠️ contractClassification is empty in setupData, skipping save during project creation");
+      }
+      
+      // 4. الانتقال إلى صفحة الويزارد بالمشروع الجديد
       navigate(`/projects/${newProjectId}/wizard?step=license`);
       
     } catch (err) {

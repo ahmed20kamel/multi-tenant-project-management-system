@@ -436,6 +436,11 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         }
         return;
       }
+      // ✅ إرسال contract_classification حتى لو كان فارغاً (مهم للاتساق)
+      if (k === "contract_classification") {
+        fd.append(k, v || "");
+        return;
+      }
       if (v === null || v === undefined || v === "") return;
       if (typeof v === "object" && !(v instanceof File) && !(v instanceof Blob) && !Array.isArray(v)) {
         fd.append(k, JSON.stringify(v));
