@@ -63,6 +63,19 @@ export default function useContract(projectId) {
         if (Array.isArray(data) && data.length) {
           const s = data[0];
           setExistingId(s.id);
+          
+          // ✅ تصفية attachments لإزالة أي مرفقات من نوع "main_contract"
+          //    لأن العقد الأصيل له قسم مستقل ولا يجب أن يظهر في الملاحق الإضافية
+          const filteredAttachments = Array.isArray(s.attachments) 
+            ? s.attachments.filter(att => {
+                // ✅ إزالة مرفقات من نوع "main_contract"
+                if (att && att.type === "main_contract") {
+                  return false;
+                }
+                return true;
+              })
+            : [];
+          
           setForm((prev) => ({
             ...prev,
             ...s,
@@ -79,6 +92,8 @@ export default function useContract(projectId) {
             extensions: Array.isArray(s.extensions) ? s.extensions : [],
             // ✅ تحميل owners من العقد (إذا كانت موجودة)
             owners: Array.isArray(s.owners) && s.owners.length > 0 ? s.owners : prev.owners || [],
+            // ✅ استخدام attachments المصفاة (بدون main_contract)
+            attachments: filteredAttachments,
           }));
           // لا نضع setIsView(true) تلقائياً - سيبقى في وضع edit حتى يختار المستخدم view
         }

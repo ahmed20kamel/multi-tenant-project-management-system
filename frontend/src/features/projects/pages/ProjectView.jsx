@@ -286,6 +286,72 @@ export default function ProjectView() {
             )}
           </Card>
 
+            {/* Awarding - فقط لمشاريع القرض السكني */}
+            {isHousingLoan && (
+              <Card
+                title={t("awarding_gulf_bank_contract_info") || "أمر الترسية وعقد بنك الخليج"}
+                actions={
+                  <div className="prj-card-actions">
+                    <Button
+                      as={Link}
+                      disabled={!hasAwarding}
+                      to={hasAwarding ? `/projects/${projectId}/awarding/view` : "#"}
+                      variant="secondary"
+                      onClick={(e) => {
+                        if (!hasAwarding) e.preventDefault();
+                      }}
+                    >
+                      {t("view_details")}
+                    </Button>
+                    <Button as={Link} to={`/projects/${projectId}/wizard?step=award&mode=edit`}>
+                      {t("edit")}
+                    </Button>
+                  </div>
+                }
+                className="prj-view-card"
+              >
+                {hasAwarding ? (
+                  <div className="prj-info-grid">
+                    <div className="prj-info-item">
+                      <div className="prj-info-label">{t("award_date") || "تاريخ أمر الترسية"}</div>
+                      <div className="prj-info-value">{awarding?.award_date || t("empty_value")}</div>
+                    </div>
+                    <div className="prj-info-item">
+                      <div className="prj-info-label">{t("project_number") || "رقم المشروع"}</div>
+                      <div className="prj-info-value">{awarding?.project_number || t("empty_value")}</div>
+                    </div>
+                    <div className="prj-info-item">
+                      <div className="prj-info-label">{t("consultant_registration_number") || "رقم تسجيل الاستشاري"}</div>
+                      <div className="prj-info-value">{awarding?.consultant_registration_number || t("empty_value")}</div>
+                    </div>
+                    <div className="prj-info-item">
+                      <div className="prj-info-label">{t("contractor_registration_number") || "رقم تسجيل المقاول"}</div>
+                      <div className="prj-info-value">{awarding?.contractor_registration_number || t("empty_value")}</div>
+                    </div>
+                    {awarding?.awarding_file && (
+                      <div className="prj-info-item">
+                        <div className="prj-info-label">{t("awarding_file") || "ملف أمر الترسية"}</div>
+                        <div className="prj-info-value">
+                          <a 
+                            href={awarding.awarding_file} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ color: "var(--primary)", textDecoration: "underline" }}
+                          >
+                            {t("view_file") || "عرض الملف"}
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="prj-empty-state">
+                    {t("awarding_not_added") || "لم يتم إضافة أمر الترسية"}
+                  </div>
+                )}
+              </Card>
+            )}
+
             {/* Financial Summary */}
             <Card
             title={t("financial_summary")}

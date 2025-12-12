@@ -245,53 +245,39 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
             setStartOrderFileName(extractFileNameFromUrl(contractData.start_order_file));
           }
           
-          // ✅ تحميل المرفقات الديناميكية
+          // ✅ تحميل المرفقات الديناميكية فقط (بدون الملفات القديمة)
+          // ✅ العقد الأصيل (contract_file, contract_appendix_file, contract_explanation_file) 
+          //    يتم عرضه في قسمه المستقل ولا يجب أن يظهر في الملاحق الإضافية
           if (contractData.attachments && Array.isArray(contractData.attachments) && contractData.attachments.length > 0) {
-            const loadedAttachments = contractData.attachments.map(att => ({
-              type: att.type || "main_contract",
-              date: att.date || "",
-              notes: att.notes || "",
-              file: null, // لا نحمل File object
-              file_url: att.file_url || null,
-              file_name: att.file_name || (att.file_url ? extractFileNameFromUrl(att.file_url) : null),
-            }));
+            // ✅ تصفية attachments لإزالة أي مرفقات من نوع "main_contract" 
+            //    لأن العقد الأصيل له قسم مستقل
+            const loadedAttachments = contractData.attachments
+              .filter(att => {
+                // ✅ إزالة مرفقات من نوع "main_contract" لأنها تظهر في قسم العقد الأصيل
+                if (att && att.type === "main_contract") {
+                  if (process.env.NODE_ENV === "development") {
+                    console.log("⚠️ Filtering out main_contract attachment:", att);
+                  }
+                  return false;
+                }
+                return true;
+              })
+              .map(att => ({
+                type: att.type || "appendix",
+                date: att.date || "",
+                notes: att.notes || "",
+                file: null, // لا نحمل File object
+                file_url: att.file_url || null,
+                file_name: att.file_name || (att.file_url ? extractFileNameFromUrl(att.file_url) : null),
+              }));
+            if (process.env.NODE_ENV === "development") {
+              console.log("✅ Loaded attachments after filtering:", loadedAttachments);
+            }
             setF("attachments", loadedAttachments);
-          } else if (!form.attachments || form.attachments.length === 0) {
-            // ✅ إذا لم تكن هناك مرفقات، نتحقق من الملفات القديمة للتوافق
-            const oldAttachments = [];
-            if (contractData.contract_file) {
-              oldAttachments.push({
-                type: "main_contract",
-                date: contractData.contract_date || "",
-                notes: "",
-                file: null,
-                file_url: contractData.contract_file,
-                file_name: extractFileNameFromUrl(contractData.contract_file),
-              });
-            }
-            if (contractData.contract_appendix_file) {
-              oldAttachments.push({
-                type: "appendix",
-                date: contractData.contract_date || "",
-                notes: "",
-                file: null,
-                file_url: contractData.contract_appendix_file,
-                file_name: extractFileNameFromUrl(contractData.contract_appendix_file),
-              });
-            }
-            if (contractData.contract_explanation_file) {
-              oldAttachments.push({
-                type: "explanation",
-                date: contractData.contract_date || "",
-                notes: "",
-                file: null,
-                file_url: contractData.contract_explanation_file,
-                file_name: extractFileNameFromUrl(contractData.contract_explanation_file),
-              });
-            }
-            if (oldAttachments.length > 0) {
-              setF("attachments", oldAttachments);
-            }
+          } else {
+            // ✅ إذا لم تكن هناك مرفقات، نضع قائمة فارغة
+            // ✅ لا نحول الملفات القديمة إلى attachments لأنها تظهر في أقسامها المستقلة
+            setF("attachments", []);
           }
           
           // الملفات القديمة (للتوافق)
@@ -332,7 +318,16 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         }
       } catch (e) {}
     })();
-  }, [projectId, setF]);
+    // ✅ إزالة setF من dependencies لأنه دالة مستقرة من useContract
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  // ✅ تم إزالة useEffect الذي كان يسبب infinite loop
+  // ✅ التصفية تتم بالفعل في:
+  //    1. useContract.js عند التحميل الأولي
+  //    2. ContractStep.jsx عند التحميل من API (السطر 254-276)
+  //    3. عند العرض (filter في map - السطر 1352 و 1389)
+  //    4. عند الحفظ (filter في buildPayload - السطر 441-446)
 
   // بناء الحمولة والحفظ
   const buildPayload = () => {
@@ -455,10 +450,15 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
     fd.append("extensions", JSON.stringify(cleanExtensions));
     
     // ✅ إضافة المرفقات الديناميكية (مع التنظيف)
+    // ✅ العقد الأصيل (contract_file) له قسم مستقل ولا يجب أن يكون في attachments
     if (form.attachments && Array.isArray(form.attachments) && form.attachments.length > 0) {
-      // ✅ تنظيف المرفقات - إزالة المرفقات الفارغة
+      // ✅ تنظيف المرفقات - إزالة المرفقات الفارغة وإزالة مرفقات من نوع "main_contract"
       const validAttachments = form.attachments.filter((att, idx) => {
         if (!att || typeof att !== "object") return false;
+        // ✅ إزالة مرفقات من نوع "main_contract" لأن العقد الأصيل له قسم مستقل
+        if (att.type === "main_contract") {
+          return false;
+        }
         // ✅ مرفق صالح إذا كان له نوع أو ملف أو ملاحظات
         const hasType = att.type && String(att.type).trim() !== "";
         const hasFile = att.file instanceof File || (att.file_url && String(att.file_url).trim() !== "");
@@ -468,7 +468,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
       
       const attachmentsData = validAttachments.map((att, idx) => {
         const attData = {
-          type: String(att.type || "main_contract").trim(),
+          type: String(att.type || "appendix").trim(), // ✅ القيمة الافتراضية هي "appendix" وليس "main_contract"
           date: toIsoDate(att.date) || null,
           notes: String(att.notes || "").trim(),
           file_url: att.file_url || null,
@@ -1359,33 +1359,41 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         {viewMode ? (
           <div>
             {form.attachments && form.attachments.length > 0 ? (
-              <div style={{ 
-                display: "grid", 
-                gridTemplateColumns: "repeat(3, 1fr)", 
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
                 gap: "var(--space-4)"
               }}>
-                {form.attachments.map((att, idx) => {
-                  // ✅ حساب عدد الملاحق السابقة (من نوع appendix فقط) - للعرض فقط
-                  const previousAppendices = form.attachments
-                    .slice(0, idx)
-                    .filter(a => a.type === "appendix");
-                  const appendixNumber = previousAppendices.length;
-                  
-                  return (
-                    <ContractAttachment
-                      key={idx}
-                      attachment={att}
-                      index={appendixNumber} // ✅ للعرض فقط (appendixNumber)
-                      attachmentIndex={idx} // ✅ الفهرس الفعلي (للتوافق)
-                      isView={true}
-                      onUpdate={() => {}}
-                      onRemove={() => {}}
-                      canRemove={false}
-                      projectId={projectId}
-                      isPrivateFunding={isPrivateFunding}
-                    />
-                  );
-                })}
+                {form.attachments
+                  .filter(att => {
+                    // ✅ حماية إضافية: تصفية main_contract عند العرض
+                    if (att && att.type === "main_contract") {
+                      return false;
+                    }
+                    return true;
+                  })
+                  .map((att, idx, filteredArray) => {
+                    // ✅ حساب عدد الملاحق السابقة (من نوع appendix فقط) - للعرض فقط
+                    const previousAppendices = filteredArray
+                      .slice(0, idx)
+                      .filter(a => a.type === "appendix");
+                    const appendixNumber = previousAppendices.length;
+                    
+                    return (
+                      <ContractAttachment
+                        key={idx}
+                        attachment={att}
+                        index={appendixNumber} // ✅ للعرض فقط (appendixNumber)
+                        attachmentIndex={idx} // ✅ الفهرس الفعلي (للتوافق)
+                        isView={true}
+                        onUpdate={() => {}}
+                        onRemove={() => {}}
+                        canRemove={false}
+                        projectId={projectId}
+                        isPrivateFunding={isPrivateFunding}
+                      />
+                    );
+                  })}
               </div>
             ) : (
               <div className="card text-center prj-muted p-20">
@@ -1401,37 +1409,48 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                 gridTemplateColumns: "repeat(3, 1fr)", 
                 gap: "var(--space-4)"
               }}>
-                {form.attachments.map((att, idx) => {
-                  // ✅ حساب عدد الملاحق السابقة (من نوع appendix فقط) - للعرض فقط
-                  const previousAppendices = form.attachments
-                    .slice(0, idx)
-                    .filter(a => a.type === "appendix");
-                  const appendixNumber = previousAppendices.length;
-                  
-                  return (
-                    <ContractAttachment
-                      key={idx}
-                      attachment={att}
-                      index={appendixNumber} // ✅ للعرض فقط (appendixNumber)
-                      attachmentIndex={idx} // ✅ الفهرس الفعلي في المصفوفة
-                      isView={false}
-                      onUpdate={(attIndex, field, value) => {
-                        // ✅ استخدام attIndex مباشرة (هو idx الفعلي)
-                        const updated = [...form.attachments];
-                        updated[attIndex] = { ...updated[attIndex], [field]: value };
-                        setF("attachments", updated);
-                      }}
-                      onRemove={(attIndex) => {
-                        // ✅ استخدام attIndex مباشرة (هو idx الفعلي)
-                        const updated = form.attachments.filter((_, i) => i !== attIndex);
-                        setF("attachments", updated);
-                      }}
-                      canRemove={true}
-                      projectId={projectId}
-                      isPrivateFunding={isPrivateFunding}
-                    />
-                  );
-                })}
+                {form.attachments
+                  .filter(att => {
+                    // ✅ حماية إضافية: تصفية main_contract عند العرض
+                    if (att && att.type === "main_contract") {
+                      return false;
+                    }
+                    return true;
+                  })
+                  .map((att, idx, filteredArray) => {
+                    // ✅ حساب عدد الملاحق السابقة (من نوع appendix فقط) - للعرض فقط
+                    const previousAppendices = filteredArray
+                      .slice(0, idx)
+                      .filter(a => a.type === "appendix");
+                    const appendixNumber = previousAppendices.length;
+                    
+                    // ✅ حساب الفهرس الفعلي في المصفوفة الأصلية
+                    const originalIndex = form.attachments.findIndex(a => a === att);
+                    
+                    return (
+                      <ContractAttachment
+                        key={originalIndex !== -1 ? originalIndex : idx}
+                        attachment={att}
+                        index={appendixNumber} // ✅ للعرض فقط (appendixNumber)
+                        attachmentIndex={originalIndex !== -1 ? originalIndex : idx} // ✅ الفهرس الفعلي في المصفوفة
+                        isView={false}
+                        onUpdate={(attIndex, field, value) => {
+                          // ✅ استخدام attIndex مباشرة (هو idx الفعلي)
+                          const updated = [...form.attachments];
+                          updated[attIndex] = { ...updated[attIndex], [field]: value };
+                          setF("attachments", updated);
+                        }}
+                        onRemove={(attIndex) => {
+                          // ✅ استخدام attIndex مباشرة (هو idx الفعلي)
+                          const updated = form.attachments.filter((_, i) => i !== attIndex);
+                          setF("attachments", updated);
+                        }}
+                        canRemove={true}
+                        projectId={projectId}
+                        isPrivateFunding={isPrivateFunding}
+                      />
+                    );
+                  })}
               </div>
             )}
           

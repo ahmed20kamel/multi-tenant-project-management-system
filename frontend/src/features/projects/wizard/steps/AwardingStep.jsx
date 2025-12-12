@@ -8,6 +8,7 @@ import StepActions from "../components/StepActions";
 import WizardShell from "../components/WizardShell";
 import Button from "../../../../components/common/Button";
 import FileAttachmentView from "../../../../components/file-upload/FileAttachmentView";
+import FileUpload from "../../../../components/file-upload/FileUpload";
 import { extractFileNameFromUrl } from "../../../../utils/fileHelpers";
 
 export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
@@ -244,12 +245,22 @@ export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
       payload.append("contractor_registration_number", contractorRegNo);
       if (awardingFile) payload.append("awarding_file", awardingFile);
 
+      let savedData;
       if (existingId) {
-        await api.patch(`projects/${projectId}/awarding/${existingId}/`, payload);
+        const response = await api.patch(`projects/${projectId}/awarding/${existingId}/`, payload);
+        savedData = response.data;
       } else {
         const { data: created } = await api.post(`projects/${projectId}/awarding/`, payload);
         if (created?.id) setExistingId(created.id);
+        savedData = created;
       }
+      
+      // ✅ تحديث URLs للملف بعد الحفظ الناجح
+      if (savedData?.awarding_file) {
+        setAwardingFileUrl(savedData.awarding_file);
+        setAwardingFileName(extractFileNameFromUrl(savedData.awarding_file));
+      }
+      
       setErrorMsg("");
       
       // ✅ إرسال حدث لتحديث بيانات المشروع في WizardPage
@@ -470,23 +481,32 @@ export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
         <div className="form-grid cols-1" style={{ gap: "var(--space-4)" }}>
           <Field label="إرفاق أمر الترسية">
             {localIsView ? (
-              <FileAttachmentView
-                fileUrl={awardingFileUrl}
-                fileName={awardingFileName || awardingFile?.name}
-                projectId={projectId}
-                endpoint={`projects/${projectId}/awarding/`}
-              />
+              awardingFileUrl ? (
+                <FileAttachmentView
+                  fileUrl={awardingFileUrl}
+                  fileName={awardingFileName || extractFileNameFromUrl(awardingFileUrl)}
+                  projectId={projectId}
+                  endpoint={`projects/${projectId}/awarding/`}
+                />
+              ) : (
+                <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
+              )
             ) : (
-              <input
-                type="file"
-                className="input"
-                onChange={(e) => {
-                  setAwardingFile(e.target.files?.[0] || null);
-                  if (e.target.files?.[0]) {
-                    setAwardingFileName(e.target.files[0].name);
-                  }
+              <FileUpload
+                value={awardingFile}
+                onChange={(file) => setAwardingFile(file)}
+                accept=".pdf"
+                maxSizeMB={10}
+                showPreview={true}
+                existingFileUrl={awardingFileUrl}
+                existingFileName={awardingFileName}
+                onRemoveExisting={() => {
+                  setAwardingFileUrl("");
+                  setAwardingFileName("");
+                  setAwardingFile(null);
                 }}
-                dir="rtl"
+                fileType="awarding_file"
+                fileIndex={0}
               />
             )}
           </Field>
