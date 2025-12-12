@@ -278,6 +278,34 @@ export default function ProjectView() {
                     {formatMoney(contract?.total_project_value)}
                   </div>
                 </div>
+                {(contract?.start_order_date || contract?.start_order_file) && (
+                  <div className="prj-info-item">
+                    <div className="prj-info-label">{t("start_order_date")}</div>
+                    <div className="prj-info-value">{contract?.start_order_date || t("empty_value")}</div>
+                  </div>
+                )}
+                {contract?.project_end_date && (
+                  <div className="prj-info-item">
+                    <div className="prj-info-label">{t("project_end_date_calculated")}</div>
+                    <div className="prj-info-value">{contract?.project_end_date}</div>
+                  </div>
+                )}
+                {contract?.start_order_notes ? (
+                  <div className="prj-info-item prj-info-item--wide">
+                    <div className="prj-info-label">{t("start_order_notes")}</div>
+                    <div className="prj-info-value">{contract.start_order_notes}</div>
+                  </div>
+                ) : null}
+                {contract?.start_order_file && (
+                  <div className="prj-info-item">
+                    <div className="prj-info-label">{t("start_order_file")}</div>
+                    <div className="prj-info-value">
+                      <a href={contract.start_order_file} target="_blank" rel="noopener noreferrer">
+                        {t("view_details")}
+                      </a>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="prj-empty-state">

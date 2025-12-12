@@ -1192,6 +1192,7 @@ class ContractSerializer(serializers.ModelSerializer):
             "extensions",
             # الملاحظات
             "general_notes",
+            "start_order_notes",
             # اللقطة
             "license_snapshot",
             # أمر المباشرة
@@ -1400,17 +1401,54 @@ class ContractSerializer(serializers.ModelSerializer):
             elif isinstance(extensions_raw, list):
                 extensions_parsed = extensions_raw
         
+        # ✅ استخراج ملفات التمديدات من FormData (مثل attachments)
+        files_data = {}
+        req = self.context.get("request")
+        if req:
+            try:
+                files = None
+                if hasattr(req, '_request') and hasattr(req._request, 'FILES'):
+                    files = req._request.FILES
+                elif hasattr(req, 'FILES'):
+                    files = req.FILES
+                
+                if files:
+                    import re
+                    pattern = re.compile(r"^extensions\[(\d+)\]\[file\]$")
+                    for key in files.keys():
+                        m = pattern.match(str(key))
+                        if m:
+                            idx = int(m.group(1))
+                            files_data[idx] = files.get(key)
+            except Exception as e:
+                logger.warning(f"Error extracting extension files: {e}")
+        
         # ✅ تنظيف extensions - التأكد من أن كل extension يحتوي على الحقول المطلوبة
         cleaned_extensions = []
-        for ext in extensions_parsed:
+        for idx, ext in enumerate(extensions_parsed):
             if isinstance(ext, dict):
                 cleaned_ext = {
                     "reason": str(ext.get("reason", "")).strip(),
                     "days": int(ext.get("days", 0)) if ext.get("days") is not None else 0,
                     "months": int(ext.get("months", 0)) if ext.get("months") is not None else 0,
+                    "extension_date": str(ext.get("extension_date", "")).strip() if ext.get("extension_date") else None,
+                    "approval_number": str(ext.get("approval_number", "")).strip() if ext.get("approval_number") else None,
+                    "file_url": str(ext.get("file_url", "")).strip() if ext.get("file_url") else None,
+                    "file_name": str(ext.get("file_name", "")).strip() if ext.get("file_name") else None,
                 }
-                # ✅ إضافة فقط إذا كان له بيانات
-                if cleaned_ext["reason"] or cleaned_ext["days"] > 0 or cleaned_ext["months"] > 0:
+                # ✅ إضافة ملف إذا كان موجوداً في FormData
+                if idx in files_data:
+                    cleaned_ext["_file"] = files_data[idx]
+                # ✅ إضافة فقط إذا كان له بيانات (سبب أو مدة أو تاريخ أو رقم اعتماد أو ملف)
+                hasData = (
+                    cleaned_ext["reason"] or 
+                    cleaned_ext["days"] > 0 or 
+                    cleaned_ext["months"] > 0 or 
+                    cleaned_ext["extension_date"] or 
+                    cleaned_ext["approval_number"] or 
+                    cleaned_ext.get("_file")
+                )
+                if hasData:
                     cleaned_extensions.append(cleaned_ext)
         
         ret["extensions"] = cleaned_extensions
@@ -1512,7 +1550,30 @@ class ContractSerializer(serializers.ModelSerializer):
             
             # ✅ حفظ extensions في قاعدة البيانات
             if extensions_data and isinstance(extensions_data, list):
-                obj.extensions = extensions_data
+                saved_extensions = []
+                for ext in extensions_data:
+                    ext_dict = {
+                        "reason": ext.get("reason", ""),
+                        "days": ext.get("days", 0),
+                        "months": ext.get("months", 0),
+                        "extension_date": ext.get("extension_date"),
+                        "approval_number": ext.get("approval_number"),
+                        "file_url": None,
+                        "file_name": None,
+                    }
+                    # ✅ إذا كان هناك ملف جديد
+                    if "_file" in ext and ext["_file"]:
+                        from django.core.files.storage import default_storage
+                        file_obj = ext["_file"]
+                        file_path = default_storage.save(f"contracts/extensions/{obj.id}/{file_obj.name}", file_obj)
+                        ext_dict["file_url"] = default_storage.url(file_path)
+                        ext_dict["file_name"] = file_obj.name
+                    # ✅ إذا كان هناك file_url موجود (من extension قديم)
+                    elif ext.get("file_url"):
+                        ext_dict["file_url"] = ext.get("file_url")
+                        ext_dict["file_name"] = ext.get("file_name")
+                    saved_extensions.append(ext_dict)
+                obj.extensions = saved_extensions
                 obj.save(update_fields=["extensions"])
             
             # ✅ حفظ المرفقات
@@ -1587,7 +1648,41 @@ class ContractSerializer(serializers.ModelSerializer):
             
             # ✅ تحديث extensions في قاعدة البيانات
             if extensions_data is not None and isinstance(extensions_data, list):
-                updated.extensions = extensions_data
+                saved_extensions = []
+                for ext in extensions_data:
+                    ext_dict = {
+                        "reason": ext.get("reason", ""),
+                        "days": ext.get("days", 0),
+                        "months": ext.get("months", 0),
+                        "extension_date": ext.get("extension_date"),
+                        "approval_number": ext.get("approval_number"),
+                        "file_url": None,
+                        "file_name": None,
+                    }
+                    # ✅ إذا كان هناك ملف جديد
+                    if "_file" in ext and ext["_file"]:
+                        from django.core.files.storage import default_storage
+                        file_obj = ext["_file"]
+                        # ✅ حذف الملف القديم إذا كان موجوداً
+                        old_ext = None
+                        if updated.extensions and isinstance(updated.extensions, list) and len(updated.extensions) > len(saved_extensions):
+                            old_ext = updated.extensions[len(saved_extensions)]
+                            if old_ext and old_ext.get("file_url"):
+                                try:
+                                    old_path = old_ext["file_url"].replace(default_storage.url(""), "")
+                                    if default_storage.exists(old_path):
+                                        default_storage.delete(old_path)
+                                except:
+                                    pass
+                        file_path = default_storage.save(f"contracts/extensions/{updated.id}/{file_obj.name}", file_obj)
+                        ext_dict["file_url"] = default_storage.url(file_path)
+                        ext_dict["file_name"] = file_obj.name
+                    # ✅ إذا كان هناك file_url موجود (من extension قديم)
+                    elif ext.get("file_url"):
+                        ext_dict["file_url"] = ext.get("file_url")
+                        ext_dict["file_name"] = ext.get("file_name")
+                    saved_extensions.append(ext_dict)
+                updated.extensions = saved_extensions
                 updated.save(update_fields=["extensions"])
             
             # ✅ تحديث المرفقات إذا كانت موجودة

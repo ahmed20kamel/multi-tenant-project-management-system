@@ -140,11 +140,11 @@ export default function PersonField({
     if (type === "contractor") {
       return (
         <div className="form-grid cols-2" style={{ gap: "var(--space-4)", width: "100%" }}>
-          <ViewRow label="الاسم (عربي)" value={nameValue} />
-          <ViewRow label="الاسم (English)" value={nameEnValue} />
+          <ViewRow label={t("owner_name_ar") || "الاسم (عربي)"} value={nameValue} />
+          <ViewRow label={t("owner_name_en") || "الاسم بالإنجليزية"} value={nameEnValue} />
           <ViewRow label={licenseLabel} value={licenseValue} />
-          <ViewRow label="الهاتف" value={phoneValue || ""} />
-          <ViewRow label="البريد الإلكتروني" value={emailValue || ""} />
+          <ViewRow label={t("phone") || "الهاتف"} value={phoneValue || ""} />
+          <ViewRow label={t("email") || "البريد الإلكتروني"} value={emailValue || ""} />
           <div></div>
         </div>
       );
@@ -152,8 +152,8 @@ export default function PersonField({
     // ✅ للاستشاري: استخدام grid 2 columns في viewMode أيضاً
     return (
       <div className="form-grid cols-2" style={{ gap: "var(--space-4)", width: "100%" }}>
-        <ViewRow label="الاسم (عربي)" value={nameValue} />
-        <ViewRow label="الاسم (English)" value={nameEnValue} />
+        <ViewRow label={t("owner_name_ar") || "الاسم (عربي)"} value={nameValue} />
+        <ViewRow label={t("owner_name_en") || "الاسم بالإنجليزية"} value={nameEnValue} />
         <ViewRow label={licenseLabel} value={licenseValue} />
         <div></div>
       </div>
@@ -372,10 +372,10 @@ export default function PersonField({
           )}
         </div>
       </Field>
-        <Field label="الاسم (English)">
+        <Field label={t("owner_name_en") || "الاسم بالإنجليزية"}>
           <input
             className="input"
-            placeholder="Enter name in English"
+            placeholder={t("owner_name_en_placeholder") || "اكتب الاسم بالإنجليزية"}
             value={nameEnValue || ""}
             onChange={(e) => {
               handleNameEnChange(e.target.value);
@@ -392,7 +392,7 @@ export default function PersonField({
             }}
           />
         </Field>
-        <Field label="الهاتف">
+        <Field label={t("phone") || "الهاتف"}>
           <div style={{ display: "flex", alignItems: "center", flexDirection: "row-reverse" }}>
             <span
               style={{
@@ -411,7 +411,7 @@ export default function PersonField({
             <input
               className="input"
               type="tel"
-              placeholder="XXXXXXXXX"
+              placeholder={t("phone_placeholder") || "أدخل رقم الهاتف"}
               value={phoneValue ? phoneValue.replace("+971", "") : ""}
               onChange={(e) => {
                 const digits = e.target.value.replace(/\D/g, "");
@@ -423,11 +423,11 @@ export default function PersonField({
             />
           </div>
         </Field>
-        <Field label="البريد الإلكتروني">
+        <Field label={t("email") || "البريد الإلكتروني"}>
           <input
             className="input"
             type="email"
-            placeholder="example@email.com"
+            placeholder={t("email_placeholder") || "أدخل البريد الإلكتروني"}
             value={emailValue || ""}
             onChange={(e) => {
               handleEmailChange(e.target.value);
@@ -444,7 +444,7 @@ export default function PersonField({
     <>
       {/* ✅ السطر الأول: الاسم العربي والإنجليزي جنب بعض */}
       <div className="form-grid cols-2" style={{ gap: "var(--space-4)", width: "100%", marginBottom: "var(--space-4)" }}>
-        <Field label="الاسم (عربي)">
+        <Field label={t("owner_name_ar") || "الاسم (عربي)"}>
           <CreatableSelect
             options={consultantOptions}
             value={nameValue ? { value: nameValue, label: nameValue } : null}
@@ -547,10 +547,10 @@ export default function PersonField({
             menuPortalTarget={document.body}
           />
         </Field>
-        <Field label="الاسم (English)">
+        <Field label={t("owner_name_en") || "الاسم بالإنجليزية"}>
           <input
             className="input"
-            placeholder="Enter name in English"
+            placeholder={t("owner_name_en_placeholder") || "اكتب الاسم بالإنجليزية"}
             value={nameEnValue || ""}
             onChange={(e) => {
               handleNameEnChange(e.target.value);

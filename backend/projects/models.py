@@ -465,6 +465,7 @@ class Contract(TimeStampedModel):
 
     start_order_date = models.DateField(null=True, blank=True)
     project_end_date = models.DateField(null=True, blank=True)
+    start_order_notes = models.TextField(blank=True, help_text="ملاحظات أمر المباشرة")
 
     # Owner consultant fees
     owner_includes_consultant = models.BooleanField(default=False)
@@ -500,7 +501,7 @@ class Contract(TimeStampedModel):
     extensions = models.JSONField(
         default=list, 
         blank=True, 
-        help_text="قائمة التمديدات: [{'reason': 'string', 'days': int, 'months': int}, ...]"
+        help_text="قائمة التمديدات: [{'reason': 'string', 'days': int, 'months': int, 'extension_date': 'string', 'approval_number': 'string', 'file_url': 'string', 'file_name': 'string'}, ...]"
     )
     
     # الملفات القديمة (للتوافق مع البيانات الموجودة)

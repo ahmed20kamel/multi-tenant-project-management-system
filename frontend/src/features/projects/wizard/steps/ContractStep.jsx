@@ -17,6 +17,7 @@ import Button from "../../../../components/common/Button";
 import FileAttachmentView from "../../../../components/file-upload/FileAttachmentView";
 import FileUpload from "../../../../components/file-upload/FileUpload";
 import ContractAttachment from "../components/ContractAttachment";
+import ContractExtension from "../components/ContractExtension";
 import PersonField from "../components/PersonField";
 import useContract from "../../../../hooks/useContract";
 import { formatMoney, formatMoneyArabic, toIsoDate, getDayName } from "../../../../utils/formatters";
@@ -247,7 +248,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
           
           // ✅ تحميل المرفقات الديناميكية فقط (بدون الملفات القديمة)
           // ✅ العقد الأصيل (contract_file, contract_appendix_file, contract_explanation_file) 
-          //    يتم عرضه في قسمه المستقل ولا يجب أن يظهر في الملاحق الإضافية
+          //    يتم عرضه في قسمه المستقل ولا يجب أن يظهر في الملاحق التعاقدية
           if (contractData.attachments && Array.isArray(contractData.attachments) && contractData.attachments.length > 0) {
             // ✅ تصفية attachments لإزالة أي مرفقات من نوع "main_contract" 
             //    لأن العقد الأصيل له قسم مستقل
@@ -292,6 +293,24 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
           if (contractData.contract_explanation_file) {
             setContractExplanationFileUrl(contractData.contract_explanation_file);
             setContractExplanationFileName(extractFileNameFromUrl(contractData.contract_explanation_file));
+          }
+          
+          // ✅ تحميل التمديدات من API
+          if (contractData.extensions && Array.isArray(contractData.extensions) && contractData.extensions.length > 0) {
+            const loadedExtensions = contractData.extensions.map(ext => ({
+              reason: ext.reason || "",
+              days: ext.days || 0,
+              months: ext.months || 0,
+              extension_date: ext.extension_date || "",
+              approval_number: ext.approval_number || "",
+              file: null, // لا نحمل File object
+              file_url: ext.file_url || null,
+              file_name: ext.file_name || (ext.file_url ? extractFileNameFromUrl(ext.file_url) : null),
+            }));
+            setF("extensions", loadedExtensions);
+          } else {
+            // ✅ إذا لم تكن هناك تمديدات، نضع قائمة فارغة
+            setF("extensions", []);
           }
           
           // ✅ تحميل المرفقات الثابتة
@@ -360,7 +379,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         throw new Error(t("start_order_required"));
       }
       if (!form.start_order_date) {
-        throw new Error(t("contract.errors.select_date") || "Start order date is required");
+        throw new Error(t("contract.errors.select_date"));
       }
     }
 
@@ -391,6 +410,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
       bank_fee_extra_value: num(form.bank_fee_extra_value, 0),
       start_order_exists: toBool(form.has_start_order),
       start_order_date: form.start_order_date || null,
+      start_order_notes: form.start_order_notes || "",
       project_end_date: form.project_end_date || null,
       general_notes: form.general_notes || "",
     };
@@ -404,12 +424,19 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         const hasReason = ext.reason && String(ext.reason).trim() !== "";
         const hasDays = ext.days !== undefined && ext.days !== null && Number(ext.days) > 0;
         const hasMonths = ext.months !== undefined && ext.months !== null && Number(ext.months) > 0;
-        return hasReason || hasDays || hasMonths;
+        const hasDate = ext.extension_date && String(ext.extension_date).trim() !== "";
+        const hasApproval = ext.approval_number && String(ext.approval_number).trim() !== "";
+        const hasFile = ext.file instanceof File || (ext.file_url && String(ext.file_url).trim() !== "");
+        return hasReason || hasDays || hasMonths || hasDate || hasApproval || hasFile;
       })
       .map(ext => ({
         reason: String(ext.reason || "").trim(),
         days: Number(ext.days) || 0,
         months: Number(ext.months) || 0,
+        extension_date: toIsoDate(ext.extension_date) || null,
+        approval_number: String(ext.approval_number || "").trim() || null,
+        file_url: ext.file_url || null,
+        file_name: ext.file_name || null,
       }));
 
     // ✅ دائماً نستخدم FormData (حتى لو لم يكن هناك ملفات) لضمان إرسال owners بشكل صحيح
@@ -448,6 +475,23 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
     
     // ✅ إضافة التمديدات بعد التنظيف
     fd.append("extensions", JSON.stringify(cleanExtensions));
+    
+    // ✅ إضافة ملفات التمديدات الجديدة
+    // ✅ نستخدم cleanExtensions للفهرس لأنها المصفوفة المصفاة التي سيتم إرسالها
+    cleanExtensions.forEach((cleanExt, cleanIdx) => {
+      // ✅ البحث عن التمديد المقابل في form.extensions الذي يحتوي على ملف
+      const originalExt = form.extensions?.find((ext, origIdx) => {
+        if (!ext || !(ext.file instanceof File)) return false;
+        // ✅ مطابقة التمديد بناءً على البيانات الأساسية
+        return String(ext.reason || "").trim() === cleanExt.reason &&
+               (Number(ext.days) || 0) === cleanExt.days &&
+               (Number(ext.months) || 0) === cleanExt.months;
+      });
+      
+      if (originalExt && originalExt.file instanceof File) {
+        fd.append(`extensions[${cleanIdx}][file]`, originalExt.file, originalExt.file.name);
+      }
+    });
     
     // ✅ إضافة المرفقات الديناميكية (مع التنظيف)
     // ✅ العقد الأصيل (contract_file) له قسم مستقل ولا يجب أن يكون في attachments
@@ -602,6 +646,21 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
           if (contractData.general_specifications_file) {
             setGeneralSpecificationsFileUrl(contractData.general_specifications_file);
             setGeneralSpecificationsFileName(extractFileNameFromUrl(contractData.general_specifications_file));
+          }
+          
+          // ✅ تحديث التمديدات بعد الحفظ (لتحميل file_url و file_name)
+          if (contractData.extensions && Array.isArray(contractData.extensions) && contractData.extensions.length > 0) {
+            const updatedExtensions = contractData.extensions.map(ext => ({
+              reason: ext.reason || "",
+              days: ext.days || 0,
+              months: ext.months || 0,
+              extension_date: ext.extension_date || "",
+              approval_number: ext.approval_number || "",
+              file: null, // لا نحمل File object
+              file_url: ext.file_url || null,
+              file_name: ext.file_name || (ext.file_url ? extractFileNameFromUrl(ext.file_url) : null),
+            }));
+            setF("extensions", updatedExtensions);
           }
         }
       } catch (e) {
@@ -955,7 +1014,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                         )}
                       </Field>
                       
-                      <Field label={t("owner_name_en") || "الاسم (English)"}>
+                      <Field label={t("owner_name_en") || "الاسم بالإنجليزية"}>
                         {viewMode ? (
                           <div style={{ 
                             padding: "12px", 
@@ -977,7 +1036,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                               updated[i] = { ...updated[i], owner_name_en: e.target.value };
                               setF("owners", updated);
                             }}
-                            placeholder="Enter name in English"
+                            placeholder={t("owner_name_en_placeholder") || "اكتب الاسم بالإنجليزية"}
                           />
                         )}
                       </Field>
@@ -1052,7 +1111,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                               updated[i] = { ...updated[i], phone: formatted };
                               setF("owners", updated);
                             }}
-                              placeholder="XXXXXXXXX"
+                              placeholder={t("phone_placeholder") || "أدخل رقم الهاتف"}
                               inputMode="numeric"
                           />
                           </div>
@@ -1081,7 +1140,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                               updated[i] = { ...updated[i], email: e.target.value };
                               setF("owners", updated);
                             }}
-                            placeholder="example@email.com"
+                            placeholder={t("email_placeholder") || "أدخل البريد الإلكتروني"}
                           />
                         )}
                       </Field>
@@ -1355,7 +1414,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         
         {/* ✅ المرفقات الديناميكية (الملاحق) */}
         <div style={{ marginTop: "var(--space-6)", paddingTop: "var(--space-6)", borderTop: "2px solid var(--border)" }}>
-          <h5 style={{ marginBottom: "var(--space-4)", fontSize: "18px", fontWeight: "600" }}>الملاحق الإضافية</h5>
+          <h5 style={{ marginBottom: "var(--space-4)", fontSize: "18px", fontWeight: "600" }}>الملاحق التعاقدية</h5>
         {viewMode ? (
           <div>
             {form.attachments && form.attachments.length > 0 ? (
@@ -1469,7 +1528,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                 }}
                 style={{ background: "#f97316", color: "white" }}
               >
-                + إضافة ملحق عقد جديد
+                + إضافة ملحق تعاقدي جديد
               </Button>
             </div>
           </div>
@@ -1497,7 +1556,25 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                   />
                 </Field>
                 <ViewRow label={t("start_order_date")} value={form.start_order_date} />
-                <ViewRow label={t("project_end_date_calculated")} value={form.project_end_date} />
+                <ViewRow 
+                  label={t("project_end_date_calculated")} 
+                  value={form.project_end_date}
+                  style={{
+                    padding: "16px",
+                    background: "var(--primary-light, rgba(59, 130, 246, 0.1))",
+                    borderRadius: "8px",
+                    border: "2px solid var(--primary, #3b82f6)",
+                    fontWeight: "600",
+                    fontSize: "16px",
+                    minHeight: "48px"
+                  }}
+                />
+                {form.start_order_notes ? (
+                  <ViewRow
+                    label={t("start_order_notes")}
+                    value={form.start_order_notes}
+                  />
+                ) : null}
               </>
             )}
           </div>
@@ -1557,12 +1634,27 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                       value={form.project_end_date}
                       readOnly
                       style={{
-                        background: "var(--surface-2)",
+                        background: "var(--primary-light, rgba(59, 130, 246, 0.1))",
                         color: "var(--text)",
-                        cursor: "default"
+                        cursor: "default",
+                        border: "2px solid var(--primary, #3b82f6)",
+                        borderRadius: "8px",
+                        padding: "16px",
+                        fontSize: "16px",
+                        fontWeight: "600",
+                        minHeight: "48px"
                       }}
                     />
                   </Field>
+                <Field label={t("start_order_notes")}>
+                  <textarea
+                    className="input"
+                    rows={4}
+                    value={form.start_order_notes || ""}
+                    onChange={(e) => setF("start_order_notes", e.target.value)}
+                    placeholder={t("start_order_notes_placeholder") || ""}
+                  />
+                </Field>
                 </>
               )}
             </>
@@ -1579,69 +1671,26 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
             {form.extensions && form.extensions.length > 0 ? (
               <div style={{
                 display: "grid",
-                gridTemplateColumns: `repeat(auto-fit, minmax(300px, 1fr))`,
-                gap: "16px"
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: "var(--space-4)"
               }}>
                 {form.extensions.map((ext, idx) => (
-                  <div key={idx} style={{
-                    background: "var(--surface)",
-                    borderRadius: "12px",
-                    padding: "20px",
-                    border: "1px solid var(--border)",
-                    direction: "rtl"
-                  }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
-                      <Field label="سبب التمديد">
-                        <input
-                          className="input"
-                          type="text"
-                          value={ext.reason || ""}
-                          readOnly
-                          style={{
-                            background: "var(--surface-2)",
-                            color: "var(--text)",
-                            cursor: "default"
-                          }}
-                          dir="rtl"
-                        />
-                      </Field>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-4)" }}>
-                        <Field label="مدة التمديد (أيام)">
-                          <input
-                            className="input"
-                            type="number"
-                            value={ext.days || 0}
-                            readOnly
-                            style={{
-                              background: "var(--surface-2)",
-                              color: "var(--text)",
-                              cursor: "default"
-                            }}
-                            dir="rtl"
-                          />
-                        </Field>
-                        <Field label="مدة التمديد (شهور)">
-                          <input
-                            className="input"
-                            type="number"
-                            value={ext.months || 0}
-                            readOnly
-                            style={{
-                              background: "var(--surface-2)",
-                              color: "var(--text)",
-                              cursor: "default"
-                            }}
-                            dir="rtl"
-                          />
-                        </Field>
-                      </div>
-                    </div>
-                  </div>
+                  <ContractExtension
+                    key={idx}
+                    extension={ext}
+                    index={idx}
+                    extensionIndex={idx}
+                    isView={true}
+                    onUpdate={() => {}}
+                    onRemove={() => {}}
+                    canRemove={false}
+                    projectId={projectId}
+                  />
                 ))}
               </div>
             ) : (
-              <div className="row row--align-center row--gap-8">
-                <InfoTip align="start" text="لا توجد تمديدات" />
+              <div className="card text-center prj-muted p-20">
+                لا توجد تمديدات
               </div>
             )}
           </div>
@@ -1650,73 +1699,28 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
             {form.extensions && form.extensions.length > 0 && (
               <div style={{
                 display: "grid",
-                gridTemplateColumns: `repeat(auto-fit, minmax(300px, 1fr))`,
-                gap: "16px"
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: "var(--space-4)"
               }}>
                 {form.extensions.map((ext, idx) => (
-                  <div key={idx} style={{
-                    background: "var(--surface)",
-                    borderRadius: "12px",
-                    padding: "20px",
-                    border: "1px solid var(--border)",
-                    direction: "rtl"
-                  }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
-                      <Field label="سبب التمديد">
-                        <input
-                          className="input"
-                          type="text"
-                          value={ext.reason || ""}
-                          onChange={(e) => {
-                            const updated = [...form.extensions];
-                            updated[idx] = { ...updated[idx], reason: e.target.value };
-                            setF("extensions", updated);
-                          }}
-                          placeholder="أدخل سبب التمديد"
-                          dir="rtl"
-                        />
-                      </Field>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-4)" }}>
-                        <Field label="مدة التمديد (أيام)">
-                          <NumberField
-                            value={ext.days || ""}
-                            onChange={(v) => {
-                              const updated = [...form.extensions];
-                              updated[idx] = { ...updated[idx], days: v ? Number(v) : 0 };
-                              setF("extensions", updated);
-                            }}
-                            min={0}
-                            placeholder="0"
-                            dir="rtl"
-                          />
-                        </Field>
-                        <Field label="مدة التمديد (شهور)">
-                          <NumberField
-                            value={ext.months || ""}
-                            onChange={(v) => {
-                              const updated = [...form.extensions];
-                              updated[idx] = { ...updated[idx], months: v ? Number(v) : 0 };
-                              setF("extensions", updated);
-                            }}
-                            min={0}
-                            placeholder="0"
-                            dir="rtl"
-                          />
-                        </Field>
-                      </div>
-                    </div>
-                    <div className={`row ${isAR ? "row--justify-start" : "row--justify-end"} mt-8`}>
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          const updated = form.extensions.filter((_, i) => i !== idx);
-                          setF("extensions", updated);
-                        }}
-                      >
-                        حذف
-                      </Button>
-                    </div>
-                  </div>
+                  <ContractExtension
+                    key={idx}
+                    extension={ext}
+                    index={idx}
+                    extensionIndex={idx}
+                    isView={false}
+                    onUpdate={(extIndex, field, value) => {
+                      const updated = [...form.extensions];
+                      updated[extIndex] = { ...updated[extIndex], [field]: value };
+                      setF("extensions", updated);
+                    }}
+                    onRemove={(extIndex) => {
+                      const updated = form.extensions.filter((_, i) => i !== extIndex);
+                      setF("extensions", updated);
+                    }}
+                    canRemove={true}
+                    projectId={projectId}
+                  />
                 ))}
               </div>
             )}
@@ -1724,11 +1728,21 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
               <Button
                 variant="secondary"
                 onClick={() => {
-                  const updated = [...(form.extensions || []), { reason: "", days: 0, months: 0 }];
-                  setF("extensions", updated);
+                  const newExtension = {
+                    reason: "",
+                    days: 0,
+                    months: 0,
+                    extension_date: "",
+                    approval_number: "",
+                    file: null,
+                    file_url: null,
+                    file_name: null,
+                  };
+                  setF("extensions", [...(form.extensions || []), newExtension]);
                 }}
+                style={{ background: "#f97316", color: "white" }}
               >
-                + إضافة تمديد
+                + إضافة تمديد جديد
               </Button>
             </div>
           </div>

@@ -32,6 +32,7 @@ const INITIAL_FORM = {
   has_start_order: "no",
   start_order_file: null,
   start_order_date: "",
+  start_order_notes: "",
   project_end_date: "",
   contract_file: null,
   contract_appendix_file: null,
@@ -65,7 +66,7 @@ export default function useContract(projectId) {
           setExistingId(s.id);
           
           // ✅ تصفية attachments لإزالة أي مرفقات من نوع "main_contract"
-          //    لأن العقد الأصيل له قسم مستقل ولا يجب أن يظهر في الملاحق الإضافية
+          //    لأن العقد الأصيل له قسم مستقل ولا يجب أن يظهر في الملاحق التعاقدية
           const filteredAttachments = Array.isArray(s.attachments) 
             ? s.attachments.filter(att => {
                 // ✅ إزالة مرفقات من نوع "main_contract"
@@ -86,10 +87,22 @@ export default function useContract(projectId) {
             bank_includes_consultant: toYesNo(s.bank_includes_consultant),
             // ✅ تحويل start_order_exists (boolean) إلى has_start_order (yes/no)
             has_start_order: toYesNo(s.start_order_exists),
+            start_order_notes: s.start_order_notes || "",
             // الحفاظ على start_order_file كـ null (سيتم تحميله في ContractStep)
             start_order_file: null,
-            // ✅ تحميل التمديدات
-            extensions: Array.isArray(s.extensions) ? s.extensions : [],
+            // ✅ تحميل التمديدات مع الحقول الجديدة
+            extensions: Array.isArray(s.extensions) 
+              ? s.extensions.map(ext => ({
+                  reason: ext.reason || "",
+                  days: ext.days || 0,
+                  months: ext.months || 0,
+                  extension_date: ext.extension_date || "",
+                  approval_number: ext.approval_number || "",
+                  file: null, // لا نحمل File object
+                  file_url: ext.file_url || null,
+                  file_name: ext.file_name || null,
+                }))
+              : [],
             // ✅ تحميل owners من العقد (إذا كانت موجودة)
             owners: Array.isArray(s.owners) && s.owners.length > 0 ? s.owners : prev.owners || [],
             // ✅ استخدام attachments المصفاة (بدون main_contract)
