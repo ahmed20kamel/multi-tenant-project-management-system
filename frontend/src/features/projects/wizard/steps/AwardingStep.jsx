@@ -9,7 +9,9 @@ import WizardShell from "../components/WizardShell";
 import Button from "../../../../components/common/Button";
 import FileAttachmentView from "../../../../components/file-upload/FileAttachmentView";
 import FileUpload from "../../../../components/file-upload/FileUpload";
+import DateInput from "../../../../components/fields/DateInput";
 import { extractFileNameFromUrl } from "../../../../utils/fileHelpers";
+import { formatDate } from "../../../../utils/formatters";
 
 export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
   const { t, i18n } = useTranslation();
@@ -309,7 +311,7 @@ export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
               <input
                 className="input"
                 type="text"
-                value={awardDate || ""}
+                value={awardDate ? formatDate(awardDate, i18n.language) : ""}
                 readOnly
                 style={{
                   background: "var(--surface-2)",
@@ -319,12 +321,10 @@ export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
                 dir="rtl"
               />
             ) : (
-              <input
-                type="date"
+              <DateInput
                 className="input"
                 value={awardDate}
-                onChange={(e) => setAwardDate(e.target.value)}
-                dir="rtl"
+                onChange={(value) => setAwardDate(value)}
               />
             )}
           </Field>

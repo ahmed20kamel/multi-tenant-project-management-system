@@ -1,13 +1,17 @@
 # backend/projects/views.py
 from django.shortcuts import get_object_or_404
-from django.http import JsonResponse
+from django.http import JsonResponse, FileResponse, Http404
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db import models
+from django.conf import settings
+import os
+from pathlib import Path
 
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.permissions import IsAuthenticated
 
 from .models import (
     Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment,
@@ -519,6 +523,31 @@ class SitePlanViewSet(_ProjectChildViewSet):
             )
         return super().create(request, *args, **kwargs)
 
+    def list(self, request, *args, **kwargs):
+        """معالجة آمنة لقراءة SitePlan مع التعامل مع الأخطاء"""
+        try:
+            return super().list(request, *args, **kwargs)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error listing SitePlan for project {kwargs.get('project_pk')}: {e}", exc_info=True)
+            # ✅ إرجاع قائمة فارغة بدلاً من 500 error
+            return Response([], status=status.HTTP_200_OK)
+
+    def retrieve(self, request, *args, **kwargs):
+        """معالجة آمنة لقراءة SitePlan مع التعامل مع الأخطاء"""
+        try:
+            return super().retrieve(request, *args, **kwargs)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error retrieving SitePlan {kwargs.get('pk')} for project {kwargs.get('project_pk')}: {e}", exc_info=True)
+            # ✅ إرجاع 404 بدلاً من 500 error
+            return Response(
+                {"detail": "SitePlan not found or error loading data."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
 
 # ===============================
 # BuildingLicense (OneToOne + Snapshot من SitePlan)
@@ -982,3 +1011,84 @@ def _recalculate_project_after_variation_removal(project, removed_net_with_vat):
         import logging
         logger = logging.getLogger(__name__)
         logger.error(f"Error recalculating project after variation removal: {e}")
+
+
+# ===============================
+# File Download Endpoint (Protected)
+# ===============================
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def download_file(request, file_path):
+    """
+    Endpoint محمي لتحميل الملفات مع authentication
+    يستقبل مسار الملف النسبي (مثل: contracts/main/file.pdf)
+    ويرجع الملف مع authentication
+    """
+    try:
+        # ✅ تنظيف المسار لمنع directory traversal attacks
+        # إزالة أي محاولة للوصول إلى ملفات خارج media/
+        file_path = file_path.lstrip('/')
+        
+        # ✅ فك ترميز URL (للتعامل مع الأحرف العربية)
+        import urllib.parse
+        try:
+            file_path = urllib.parse.unquote(file_path)
+        except:
+            pass  # إذا فشل فك الترميز، نستخدم المسار كما هو
+        
+        if '..' in file_path or file_path.startswith('/'):
+            return Response(
+                {"detail": "Invalid file path"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # ✅ بناء المسار الكامل للملف
+        media_root = Path(settings.MEDIA_ROOT)
+        full_path = media_root / file_path
+        
+        # ✅ التأكد من أن الملف موجود
+        if not full_path.exists() or not full_path.is_file():
+            return Response(
+                {"detail": "File not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # ✅ التأكد من أن الملف داخل MEDIA_ROOT (منع directory traversal)
+        try:
+            full_path.resolve().relative_to(media_root.resolve())
+        except ValueError:
+            return Response(
+                {"detail": "Invalid file path"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # ✅ تحديد content type
+        import mimetypes
+        content_type, encoding = mimetypes.guess_type(str(full_path))
+        if not content_type:
+            content_type = 'application/octet-stream'
+        
+        # ✅ إرجاع الملف مع headers مناسبة
+        response = FileResponse(
+            open(full_path, 'rb'),
+            content_type=content_type
+        )
+        
+        # ✅ إضافة Content-Disposition header
+        filename = os.path.basename(file_path)
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        
+        # ✅ إضافة CORS headers إذا لزم الأمر
+        response['Access-Control-Allow-Credentials'] = 'true'
+        response['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        
+        return response
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error downloading file {file_path}: {e}", exc_info=True)
+        return Response(
+            {"detail": "Error downloading file"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

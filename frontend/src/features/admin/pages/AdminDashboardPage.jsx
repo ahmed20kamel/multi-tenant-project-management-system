@@ -5,6 +5,7 @@ import { api } from '../../../services/api';
 import Card from '../../../components/common/Card';
 import Button from '../../../components/common/Button';
 import { FaBuilding, FaUsers, FaChartLine, FaCog, FaToggleOn, FaToggleOff } from 'react-icons/fa';
+import { formatDate } from '../../../utils/formatters';
 
 export default function AdminDashboardPage() {
   const { user } = useAuth();
@@ -375,7 +376,7 @@ export default function AdminDashboardPage() {
                     flexWrap: 'wrap'
                   }}>
                     <span>
-                      تاريخ الإنشاء: {new Date(tenant.created_at).toLocaleDateString()}
+                      تاريخ الإنشاء: {formatDate(tenant.created_at, i18n.language)}
                     </span>
                     {tenant.is_trial && (
                       <span style={{ 

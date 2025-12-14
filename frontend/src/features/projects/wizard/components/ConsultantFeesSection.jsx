@@ -7,6 +7,16 @@ import RtlSelect from "../../../../components/forms/RtlSelect";
 import NumberField from "../../../../components/forms/NumberField";
 import YesNoChips from "../../../../components/ui/YesNoChips";
 
+// ✅ دالة لإزالة الأصفار الزائدة من القيم المعروضة فقط (مثل 2.00 → 2)
+// لا تغير القيمة الأصلية، فقط للتنسيق في العرض
+const formatPercentValue = (value) => {
+  if (!value || value === "" || value === "0") return "0";
+  const num = parseFloat(value);
+  if (isNaN(num)) return value;
+  // إزالة الأصفار الزائدة: إذا كان عدد صحيح (2.00) → 2، وإلا (2.5) → 2.5
+  return num % 1 === 0 ? String(Math.floor(num)) : String(num);
+};
+
 export default function ConsultantFeesSection({
   prefix, // "owner" أو "bank"
   form,
@@ -40,11 +50,11 @@ export default function ConsultantFeesSection({
             <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
               <ViewRow
                 label={t("contract.fees.design_percent")}
-                value={form[`${prefix}_fee_design_percent`] || "0.00"}
+                value={form[`${prefix}_fee_design_percent`] ? `${formatPercentValue(form[`${prefix}_fee_design_percent`])}%` : "0%"}
               />
               <ViewRow
                 label={t("contract.fees.supervision_percent")}
-                value={form[`${prefix}_fee_supervision_percent`] || "0.00"}
+                value={form[`${prefix}_fee_supervision_percent`] ? `${formatPercentValue(form[`${prefix}_fee_supervision_percent`])}%` : "0%"}
               />
             </div>
             <ViewRow
@@ -74,28 +84,46 @@ export default function ConsultantFeesSection({
         <>
           <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
             <Field label={t("contract.fees.design_percent")}>
-              <input
-                className="input"
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={form[`${prefix}_fee_design_percent`] || ""}
-                onChange={(e) => setF(`${prefix}_fee_design_percent`, e.target.value)}
-                placeholder="0.00"
-              />
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexDirection: isAR ? "row-reverse" : "row" }}>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={form[`${prefix}_fee_design_percent`] || ""}
+                  onChange={(e) => setF(`${prefix}_fee_design_percent`, e.target.value)}
+                  placeholder="0"
+                  style={{ flex: 1 }}
+                />
+                <span style={{ 
+                  fontSize: "14px", 
+                  fontWeight: "500", 
+                  color: "var(--text)",
+                  minWidth: "20px"
+                }}>%</span>
+              </div>
             </Field>
             <Field label={t("contract.fees.supervision_percent")}>
-              <input
-                className="input"
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={form[`${prefix}_fee_supervision_percent`] || ""}
-                onChange={(e) => setF(`${prefix}_fee_supervision_percent`, e.target.value)}
-                placeholder="0.00"
-              />
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexDirection: isAR ? "row-reverse" : "row" }}>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={form[`${prefix}_fee_supervision_percent`] || ""}
+                  onChange={(e) => setF(`${prefix}_fee_supervision_percent`, e.target.value)}
+                  placeholder="0"
+                  style={{ flex: 1 }}
+                />
+                <span style={{ 
+                  fontSize: "14px", 
+                  fontWeight: "500", 
+                  color: "var(--text)",
+                  minWidth: "20px"
+                }}>%</span>
+              </div>
             </Field>
           </div>
           <Field label={t("contract.fees.extra_type")}>

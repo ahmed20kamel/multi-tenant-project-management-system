@@ -6,10 +6,12 @@ import RtlSelect from "../../../../components/forms/RtlSelect";
 import Button from "../../../../components/common/Button";
 import FileAttachmentView from "../../../../components/file-upload/FileAttachmentView";
 import FileUpload from "../../../../components/file-upload/FileUpload";
+import DateInput from "../../../../components/fields/DateInput";
 import { NATIONALITIES } from "../../../../utils/constants";
 import { handleEmiratesIdInput } from "../../../../utils/idFormatters";
 import { extractFileNameFromUrl } from "../../../../utils/fileHelpers";
 import { formatOwnerName, formatUAEPhone, calculateBirthDateFromEmiratesId } from "../../../../utils/inputFormatters";
+import { formatDate } from "../../../../utils/formatters";
 
 export const EMPTY_OWNER = {
   owner_name_ar: "",
@@ -24,10 +26,11 @@ export const EMPTY_OWNER = {
   share_percent: "100",
   phone: "",
   email: "",
+  is_authorized: false, // ✅ المالك المفوض
 };
 
-export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, canRemove, isAR, idAttachmentUrl, projectId, idAttachmentFileName, hideContactInfo = false }) {
-  const { t } = useTranslation();
+export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, canRemove, isAR, idAttachmentUrl, projectId, idAttachmentFileName, hideContactInfo = false, isAuthorized = false, onAuthorizedChange }) {
+  const { t, i18n } = useTranslation();
   const nationalityOptions = NATIONALITIES.map(n => ({
     value: n.value,
     label: isAR ? n.label.ar : n.label.en
@@ -36,6 +39,14 @@ export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, ca
   if (isView) {
     return (
       <div className="card">
+        {/* ✅ عرض المالك المفوض في وضع العرض */}
+        {owner.is_authorized && (
+          <div style={{ marginBottom: "16px", padding: "12px", background: "var(--primary-50)", borderRadius: "8px", border: "2px solid var(--primary)" }}>
+            <span style={{ fontWeight: 600, color: "var(--primary)" }}>
+              {t("authorized_owner") || "المالك المفوض"} ✓
+            </span>
+          </div>
+        )}
         <div className="form-grid cols-4">
           <ViewRow label={t("owner_name_ar")} value={owner.owner_name_ar} />
           <ViewRow label={t("owner_name_en")} value={owner.owner_name_en} />
@@ -45,12 +56,12 @@ export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, ca
           <ViewRow label={t("email")} value={owner.email} />
           <ViewRow label={t("id_number")} value={owner.id_number} />
           {owner.birth_date && (
-            <ViewRow label={t("birth_date") || "تاريخ الميلاد"} value={owner.birth_date} />
+            <ViewRow label={t("birth_date") || "تاريخ الميلاد"} value={formatDate(owner.birth_date, i18n.language)} />
           )}
           {owner.nationality !== "Emirati" && (
-            <ViewRow label={t("issue_date")} value={owner.id_issue_date} />
+            <ViewRow label={t("issue_date")} value={formatDate(owner.id_issue_date, i18n.language)} />
           )}
-          <ViewRow label={t("expiry_date")} value={owner.id_expiry_date} />
+          <ViewRow label={t("expiry_date")} value={formatDate(owner.id_expiry_date, i18n.language)} />
           <Field label={t("id_attachment")}>
             <FileAttachmentView
               fileUrl={
@@ -77,6 +88,23 @@ export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, ca
 
   return (
     <div className="owner-block">
+      {/* ✅ Radio Button لاختيار المالك المفوض */}
+      {onAuthorizedChange && (
+        <div style={{ marginBottom: "16px", padding: "12px", background: "var(--surface-2)", borderRadius: "8px", border: isAuthorized ? "2px solid var(--primary)" : "1px solid var(--border)" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+            <input
+              type="radio"
+              name="authorized_owner"
+              checked={isAuthorized}
+              onChange={() => onAuthorizedChange(index)}
+              style={{ cursor: "pointer" }}
+            />
+            <span style={{ fontWeight: isAuthorized ? 600 : 400, color: isAuthorized ? "var(--primary)" : "var(--text)" }}>
+              {t("authorized_owner") || "المالك المفوض"}
+            </span>
+          </label>
+        </div>
+      )}
       <div className="form-grid cols-3">
         <Field label={t("owner_name_ar")}>
           <input
@@ -174,20 +202,18 @@ export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, ca
         </Field>
         {owner.nationality !== "Emirati" && (
           <Field label={t("issue_date")}>
-            <input
+            <DateInput
               className="input"
-              type="date"
               value={owner.id_issue_date || ""}
-              onChange={(e) => onUpdate(index, "id_issue_date", e.target.value)}
+              onChange={(value) => onUpdate(index, "id_issue_date", value)}
             />
           </Field>
         )}
         <Field label={t("expiry_date")}>
-          <input
+          <DateInput
             className="input"
-            type="date"
             value={owner.id_expiry_date || ""}
-            onChange={(e) => onUpdate(index, "id_expiry_date", e.target.value)}
+            onChange={(value) => onUpdate(index, "id_expiry_date", value)}
           />
         </Field>
         <Field label={t("id_attachment")}>

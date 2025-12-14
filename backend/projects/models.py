@@ -367,6 +367,57 @@ class SitePlanOwner(TimeStampedModel):
     share_percent = models.DecimalField(
         max_digits=5, decimal_places=2, validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))], default=100
     )
+    # ✅ حقل العمر المحسوب (يتم حفظه تلقائياً عند الحفظ)
+    age = models.PositiveIntegerField(null=True, blank=True, editable=False, help_text="العمر محسوب تلقائياً من رقم الهوية")
+    # ✅ المالك المفوض (يتم اختياره صراحة من الواجهة)
+    is_authorized = models.BooleanField(default=False, help_text="المالك المفوض (يتم اختياره صراحة)")
+
+    def calculate_age_from_id(self):
+        """حساب العمر من رقم الهوية الإماراتية"""
+        if not self.id_number:
+            return None
+        
+        import re
+        from datetime import date
+        
+        # إزالة الفواصل والمسافات
+        cleaned = re.sub(r'[-\s]', '', str(self.id_number))
+        
+        # محاولة استخراج سنة الميلاد من التنسيق: 784-YYYY-XXXXXXX-X
+        birth_year = None
+        
+        # طريقة 1: إذا كان الرقم يحتوي على فواصل
+        if '-' in str(self.id_number):
+            parts = str(self.id_number).split('-')
+            if len(parts) >= 2 and parts[1]:
+                try:
+                    year = int(parts[1].strip())
+                    if 1900 <= year <= date.today().year:
+                        birth_year = year
+                except (ValueError, TypeError):
+                    pass
+        
+        # طريقة 2: إذا لم نجد سنة من الفواصل، نحاول من المواضع 4-7
+        if birth_year is None and len(cleaned) >= 8:
+            try:
+                year = int(cleaned[3:7])
+                if 1900 <= year <= date.today().year:
+                    birth_year = year
+            except (ValueError, TypeError):
+                pass
+        
+        # حساب العمر
+        if birth_year:
+            current_year = date.today().year
+            age = current_year - birth_year
+            return age if age >= 0 else None
+        
+        return None
+
+    def save(self, *args, **kwargs):
+        """حساب العمر تلقائياً قبل الحفظ"""
+        self.age = self.calculate_age_from_id()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.owner_name_ar or self.owner_name_en or "Unnamed Owner"

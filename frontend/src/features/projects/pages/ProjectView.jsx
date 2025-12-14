@@ -6,11 +6,13 @@ import Card from "../../../components/common/Card";
 import Button from "../../../components/common/Button";
 import Dialog from "../../../components/common/Dialog";
 import PageLayout from "../../../components/layout/PageLayout";
+import DateInput from "../../../components/fields/DateInput";
 import useProjectData from "../../../hooks/useProjectData";
-import { formatMoney } from "../../../utils/formatters";
+import { formatMoney, formatDate } from "../../../utils/formatters";
 import { getProjectTypeLabel, getVillaCategoryLabel, getContractTypeLabel } from "../../../utils/projectLabels";
 import { formatInternalCode } from "../../../utils/internalCodeFormatter";
 import { getProjectStatusLabel, getProjectStatusColor } from "../../../utils/projectStatus";
+import { handleFileClick } from "../../../utils/fileHelpers";
 
 export default function ProjectView() {
   const { projectId } = useParams();
@@ -297,10 +299,14 @@ export default function ProjectView() {
                   </div>
                 ) : null}
                 {contract?.start_order_file && (
-                  <div className="prj-info-item">
+                    <div className="prj-info-item">
                     <div className="prj-info-label">{t("start_order_file")}</div>
                     <div className="prj-info-value">
-                      <a href={contract.start_order_file} target="_blank" rel="noopener noreferrer">
+                      <a 
+                        href="#" 
+                        onClick={handleFileClick(contract.start_order_file)}
+                        style={{ color: "var(--primary)", textDecoration: "underline", cursor: "pointer" }}
+                      >
                         {t("view_details")}
                       </a>
                     </div>
@@ -361,10 +367,9 @@ export default function ProjectView() {
                         <div className="prj-info-label">{t("awarding_file") || "ملف أمر الترسية"}</div>
                         <div className="prj-info-value">
                           <a 
-                            href={awarding.awarding_file} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            style={{ color: "var(--primary)", textDecoration: "underline" }}
+                            href="#" 
+                            onClick={handleFileClick(awarding.awarding_file)}
+                            style={{ color: "var(--primary)", textDecoration: "underline", cursor: "pointer" }}
                           >
                             {t("view_file") || "عرض الملف"}
                           </a>
@@ -439,7 +444,7 @@ export default function ProjectView() {
                           <tr key={payment.id} style={{ borderBottom: "1px solid var(--border)" }}>
                             <td style={{ padding: "8px" }}>{i + 1}</td>
                             <td style={{ padding: "8px" }}>
-                              {new Date(payment.date).toLocaleDateString(i18n.language === "ar" ? "ar-SA" : "en-US")}
+                              {formatDate(payment.date, i18n.language)}
                             </td>
                             <td style={{ padding: "8px" }}>{formatMoney(payment.amount)}</td>
                             <td style={{ padding: "8px" }}>
@@ -592,11 +597,10 @@ export default function ProjectView() {
               <label style={{ display: "block", marginBottom: "8px", fontWeight: 500 }}>
                 {t("payment_date")} *
               </label>
-              <input
-                type="date"
+              <DateInput
                 className="prj-input"
                 value={paymentFormData.date}
-                onChange={(e) => setPaymentFormData({ ...paymentFormData, date: e.target.value })}
+                onChange={(value) => setPaymentFormData({ ...paymentFormData, date: value })}
               />
             </div>
             <div>

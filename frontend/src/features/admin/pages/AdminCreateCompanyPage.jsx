@@ -5,6 +5,7 @@ import { api } from '../../../services/api';
 import Card from '../../../components/common/Card';
 import Button from '../../../components/common/Button';
 import Field from '../../../components/forms/Field';
+import DateInput from '../../../components/fields/DateInput';
 import { FaBuilding, FaUser, FaSave, FaTimes } from 'react-icons/fa';
 
 export default function AdminCreateCompanyPage() {
@@ -315,22 +316,18 @@ export default function AdminCreateCompanyPage() {
             </Field>
 
             <Field label="تاريخ بداية الاشتراك">
-              <input
-                type="date"
-                name="subscription_start_date"
+              <DateInput
                 className="input"
                 value={formData.subscription_start_date}
-                onChange={handleChange}
+                onChange={(value) => setFormData({ ...formData, subscription_start_date: value })}
               />
             </Field>
 
             <Field label="تاريخ نهاية الاشتراك">
-              <input
-                type="date"
-                name="subscription_end_date"
+              <DateInput
                 className="input"
                 value={formData.subscription_end_date}
-                onChange={handleChange}
+                onChange={(value) => setFormData({ ...formData, subscription_end_date: value })}
               />
             </Field>
 

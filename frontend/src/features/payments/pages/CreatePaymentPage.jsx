@@ -5,6 +5,7 @@ import { api } from "../../../services/api";
 import PageLayout from "../../../components/layout/PageLayout";
 import Button from "../../../components/common/Button";
 import FileUpload from "../../../components/file-upload/FileUpload";
+import DateInput from "../../../components/fields/DateInput";
 import { formatMoney } from "../../../utils/formatters";
 
 export default function CreatePaymentPage() {
@@ -291,12 +292,10 @@ export default function CreatePaymentPage() {
                   <label style={{ display: "block", marginBottom: "8px", fontWeight: 500 }}>
                     {t("payment_date")} *
                   </label>
-                  <input
-                    type="date"
+                  <DateInput
                     className="prj-input"
                     value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    required
+                    onChange={(value) => setFormData({ ...formData, date: value })}
                   />
                 </div>
               </div>
@@ -584,11 +583,10 @@ export default function CreatePaymentPage() {
                     <label style={{ display: "block", marginBottom: "8px", fontWeight: 500 }}>
                       {t("cheque_date") || "تاريخ الشيك"}
                     </label>
-                    <input
-                      type="date"
+                    <DateInput
                       className="prj-input"
                       value={formData.cheque_date}
-                      onChange={(e) => setFormData({ ...formData, cheque_date: e.target.value })}
+                      onChange={(value) => setFormData({ ...formData, cheque_date: value })}
                     />
                   </div>
                 </div>

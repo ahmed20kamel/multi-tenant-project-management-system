@@ -1,19 +1,29 @@
 // frontend/src/components/FileUpload.jsx
 import { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FaFile, FaCheckCircle, FaTimes } from 'react-icons/fa';
+import { FaFile, FaCheckCircle, FaTimes, FaEye } from 'react-icons/fa';
 import { processFileForUpload, formatFileSize, validateFileSize } from '../../utils/fileCompression';
 import Button from '../common/Button';
 import { getStandardFileName } from '../../utils/fileNaming';
+import { buildFileUrl, extractFileNameFromUrl } from '../../utils/fileHelpers';
 import './FileUpload.css';
 
 /**
- * مكون محسّن لرفع الملفات مع:
+ * مكون موحد لرفع الملفات في النظام بالكامل
+ * 
+ * هذا هو المكون الموحد الوحيد لرفع الملفات في النظام.
+ * يجب استخدامه في جميع الشاشات لضمان الاتساق في:
+ * - العرض والمعاينة
+ * - الاستبدال والحذف
+ * - التحقق من الحجم والنوع
+ * - ضغط الصور تلقائياً
+ * 
+ * الميزات:
  * - ضغط تلقائي للصور
- * - شريط تقدم
  * - معاينة الملف
  * - التحقق من الحجم والنوع
- * - تصميم محسّن بدون عرض اسم الملف
+ * - دعم الملفات الموجودة مسبقاً
+ * - تصميم موحد ومتناسق
  */
 export default function FileUpload({
   value, // File أو null
@@ -90,6 +100,98 @@ export default function FileUpload({
     }
   };
 
+  // ✅ دالة فتح الملف في نافذة جديدة
+  const handlePreview = async (e) => {
+    // ✅ منع أي سلوك افتراضي أو propagation
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    try {
+      // للملفات الجديدة (File object)
+      if (value instanceof File) {
+        const fileUrl = URL.createObjectURL(value);
+        // ✅ استخدام <a> tag لتجنب popup blocker
+        const link = document.createElement('a');
+        link.href = fileUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        // تنظيف URL بعد فتح النافذة
+        setTimeout(() => URL.revokeObjectURL(fileUrl), 1000);
+        return;
+      }
+
+      // للملفات الموجودة (existingFileUrl) - استخدام fetch مع credentials
+      if (existingFileUrl) {
+        const fullUrl = buildFileUrl(existingFileUrl);
+        if (!fullUrl) {
+          console.error('لا يمكن بناء URL للملف:', existingFileUrl);
+          return;
+        }
+
+        // ✅ استخدام buildFileUrl للحصول على API endpoint محمي
+        const apiUrl = buildFileUrl(existingFileUrl);
+        if (!apiUrl) {
+          throw new Error('لا يمكن بناء URL للملف');
+        }
+
+        // ✅ تحميل الملف من API endpoint محمي مع JWT token
+        const isDev = import.meta.env.DEV;
+        const apiBase = isDev ? "/api" : (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+        const fullApiUrl = apiUrl.startsWith("http") ? apiUrl : `${window.location.origin}${apiUrl}`;
+        
+        const token = localStorage.getItem('access_token');
+        const headers = {
+          'Accept': '*/*',
+        };
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const response = await fetch(fullApiUrl, {
+          method: 'GET',
+          credentials: 'include', // ✅ إرسال cookies مع الطلب
+          headers: headers
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
+        }
+
+        const blob = await response.blob();
+        
+        // ✅ استخدام دالة محسّنة لفتح الملف مع عنوان واضح
+        const fileName = existingFileName || extractFileNameFromUrl(existingFileUrl) || 'File';
+        const { openFileInNewWindow } = await import("../../utils/fileHelpers");
+        await openFileInNewWindow(existingFileUrl, fileName, {});
+      }
+    } catch (error) {
+      console.error('خطأ في فتح الملف:', error);
+      // ✅ Fallback: محاولة فتح الملف مباشرة (للملفات العامة)
+      try {
+        if (existingFileUrl) {
+          const fullUrl = buildFileUrl(existingFileUrl);
+          if (fullUrl) {
+            const link = document.createElement('a');
+            link.href = fullUrl;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
+        }
+      } catch (fallbackError) {
+        console.error('خطأ في fallback:', fallbackError);
+      }
+    }
+  };
+
   return (
     <div className={`file-upload-wrapper ${className}`}>
       {label && <label className="field-label">{label}</label>}
@@ -103,6 +205,18 @@ export default function FileUpload({
               <span className="file-status-text">{t('current_file') || 'الملف الحالي'}</span>
             </div>
             <div className="file-actions">
+              <Button
+                variant="primary"
+                type="button"
+                onClick={(e) => handlePreview(e)}
+                className="preview-file-btn"
+                size="small"
+                disabled={disabled || isProcessing}
+                title={t('preview_file') || 'معاينة الملف'}
+              >
+                <FaEye />
+                <span>{t('preview') || 'معاينة'}</span>
+              </Button>
               <Button
                 variant="secondary"
                 type="button"
@@ -150,6 +264,18 @@ export default function FileUpload({
               </div>
             </div>
             <div className="file-actions">
+              <Button
+                variant="primary"
+                type="button"
+                onClick={(e) => handlePreview(e)}
+                className="preview-file-btn"
+                size="small"
+                disabled={disabled || isProcessing}
+                title={t('preview_file') || 'معاينة الملف'}
+              >
+                <FaEye />
+                <span>{t('preview') || 'معاينة'}</span>
+              </Button>
               <Button
                 variant="secondary"
                 type="button"

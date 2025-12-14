@@ -5,7 +5,8 @@ import { api } from "../../../services/api";
 import PageLayout from "../../../components/layout/PageLayout";
 import Button from "../../../components/common/Button";
 import UnifiedSelect from "../../../components/common/Select";
-import { formatMoney } from "../../../utils/formatters";
+import DateInput from "../../../components/fields/DateInput";
+import { formatMoney, formatDate } from "../../../utils/formatters";
 import "./CreateInvoicePage.css";
 
 export default function CreateActualInvoicePage() {
@@ -248,7 +249,7 @@ export default function CreateActualInvoicePage() {
                     placeholder={t("select_payment")}
                     isClearable
                     getOptionLabel={(opt) => {
-                      const date = opt.date ? new Date(opt.date).toLocaleDateString('ar-EG') : '';
+                      const date = opt.date ? formatDate(opt.date, 'ar') : '';
                       return `${formatMoney(opt.amount)} - ${date}`;
                     }}
                     getOptionValue={(opt) => opt.id?.toString()}
@@ -261,12 +262,10 @@ export default function CreateActualInvoicePage() {
                   <label className="form-label">
                     {t("invoice_date")} *
                   </label>
-                  <input
-                    type="date"
+                  <DateInput
                     className="prj-input"
                     value={formData.invoice_date}
-                    onChange={(e) => setFormData({ ...formData, invoice_date: e.target.value })}
-                    required
+                    onChange={(value) => setFormData({ ...formData, invoice_date: value })}
                   />
                 </div>
                 <div className="form-field">

@@ -5,6 +5,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import Field from '../../../components/forms/Field';
 import Button from '../../../components/common/Button';
 import Card from '../../../components/common/Card';
+import FileUpload from '../../../components/file-upload/FileUpload';
 import { api } from '../../../services/api';
 
 export default function CompanyRegistrationPage() {
@@ -223,12 +224,16 @@ export default function CompanyRegistrationPage() {
                 />
               </Field>
               <Field label={isRTL ? 'شعار الشركة' : 'Company Logo'}>
-                <input
-                  type="file"
-                  name="company_logo"
-                  className="input"
+                <FileUpload
+                  value={formData.company_logo instanceof File ? formData.company_logo : null}
+                  onChange={(file) => setFormData({ ...formData, company_logo: file })}
                   accept="image/*"
-                  onChange={handleInputChange}
+                  maxSizeMB={5}
+                  showPreview={true}
+                  compressionOptions={{
+                    maxSizeMB: 1,
+                    maxWidthOrHeight: 800,
+                  }}
                 />
               </Field>
               <Field label={isRTL ? 'رقم الرخصة' : 'License Number'}>

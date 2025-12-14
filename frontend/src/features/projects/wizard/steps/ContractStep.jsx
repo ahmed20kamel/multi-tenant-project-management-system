@@ -16,11 +16,13 @@ import NumberField from "../../../../components/forms/NumberField";
 import Button from "../../../../components/common/Button";
 import FileAttachmentView from "../../../../components/file-upload/FileAttachmentView";
 import FileUpload from "../../../../components/file-upload/FileUpload";
+import DateInput from "../../../../components/fields/DateInput";
 import ContractAttachment from "../components/ContractAttachment";
 import ContractExtension from "../components/ContractExtension";
+import StaticContractAttachmentFile from "../components/StaticContractAttachmentFile";
 import PersonField from "../components/PersonField";
 import useContract from "../../../../hooks/useContract";
-import { formatMoney, formatMoneyArabic, toIsoDate, getDayName } from "../../../../utils/formatters";
+import { formatMoney, formatMoneyArabic, toIsoDate, getDayName, formatDate } from "../../../../utils/formatters";
 import { numberToArabicWords } from "../../../../utils/numberFormatting";
 import { num, toBool, formatServerErrors, flattenEntries, labelForKey, PRIMARY_ORDER } from "../../../../utils/helpers";
 import { getErrorMessage } from "../../../../utils/errorHandler";
@@ -137,23 +139,6 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
   const [errorMsg, setErrorMsg] = useState("");
   const [startOrderFileUrl, setStartOrderFileUrl] = useState("");
   const [startOrderFileName, setStartOrderFileName] = useState(""); // اسم الملف المحفوظ محلياً
-  const [contractFileUrl, setContractFileUrl] = useState("");
-  const [contractFileName, setContractFileName] = useState("");
-  const [contractAppendixFileUrl, setContractAppendixFileUrl] = useState("");
-  const [contractAppendixFileName, setContractAppendixFileName] = useState("");
-  const [contractExplanationFileUrl, setContractExplanationFileUrl] = useState("");
-  const [contractExplanationFileName, setContractExplanationFileName] = useState("");
-  // ✅ URLs للمرفقات الثابتة
-  const [quantitiesTableFileUrl, setQuantitiesTableFileUrl] = useState("");
-  const [quantitiesTableFileName, setQuantitiesTableFileName] = useState("");
-  const [approvedMaterialsTableFileUrl, setApprovedMaterialsTableFileUrl] = useState("");
-  const [approvedMaterialsTableFileName, setApprovedMaterialsTableFileName] = useState("");
-  const [priceOfferFileUrl, setPriceOfferFileUrl] = useState("");
-  const [priceOfferFileName, setPriceOfferFileName] = useState("");
-  const [contractualDrawingsFileUrl, setContractualDrawingsFileUrl] = useState("");
-  const [contractualDrawingsFileName, setContractualDrawingsFileName] = useState("");
-  const [generalSpecificationsFileUrl, setGeneralSpecificationsFileUrl] = useState("");
-  const [generalSpecificationsFileName, setGeneralSpecificationsFileName] = useState("");
 
   // قوائم ثابتة
   const CONTRACT_CLASSIFICATION = useMemo(
@@ -243,7 +228,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
           const contractData = data[0];
           if (contractData.start_order_file) {
             setStartOrderFileUrl(contractData.start_order_file);
-            setStartOrderFileName(extractFileNameFromUrl(contractData.start_order_file));
+            setStartOrderFileName(contractData.start_order_file_name || extractFileNameFromUrl(contractData.start_order_file));
           }
           
           // ✅ تحميل المرفقات الديناميكية فقط (بدون الملفات القديمة)
@@ -273,26 +258,43 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
               }));
             if (process.env.NODE_ENV === "development") {
               console.log("✅ Loaded attachments after filtering:", loadedAttachments);
+              console.log("✅ Attachments with file_url:", loadedAttachments.map(att => ({ 
+                type: att.type, 
+                has_file_url: !!att.file_url, 
+                file_url: att.file_url,
+                file_name: att.file_name 
+              })));
             }
+            // ✅ تحديث المرفقات فقط إذا كانت مختلفة عن المرفقات الحالية
+            //    هذا يمنع استبدال المرفقات المحملة من useContract إذا كانت متطابقة
             setF("attachments", loadedAttachments);
           } else {
-            // ✅ إذا لم تكن هناك مرفقات، نضع قائمة فارغة
-            // ✅ لا نحول الملفات القديمة إلى attachments لأنها تظهر في أقسامها المستقلة
-            setF("attachments", []);
+            // ✅ إذا لم تكن هناك مرفقات في API، نتحقق من المرفقات الموجودة في form
+            //    (قد تكون محملة من useContract)
+            if (!form.attachments || form.attachments.length === 0) {
+              setF("attachments", []);
+            }
+            // ✅ إذا كانت هناك مرفقات في form، نحتفظ بها (لا نستبدلها بقائمة فارغة)
           }
           
-          // الملفات القديمة (للتوافق)
+          // ✅ تحميل ملفات العقد في form state
           if (contractData.contract_file) {
-            setContractFileUrl(contractData.contract_file);
-            setContractFileName(extractFileNameFromUrl(contractData.contract_file));
+            const url = contractData.contract_file;
+            const fileName = contractData.contract_file_name || extractFileNameFromUrl(url);
+            setF("contract_file_url", url);
+            setF("contract_file_name", fileName);
           }
           if (contractData.contract_appendix_file) {
-            setContractAppendixFileUrl(contractData.contract_appendix_file);
-            setContractAppendixFileName(extractFileNameFromUrl(contractData.contract_appendix_file));
+            const url = contractData.contract_appendix_file;
+            const fileName = contractData.contract_appendix_file_name || extractFileNameFromUrl(url);
+            setF("contract_appendix_file_url", url);
+            setF("contract_appendix_file_name", fileName);
           }
           if (contractData.contract_explanation_file) {
-            setContractExplanationFileUrl(contractData.contract_explanation_file);
-            setContractExplanationFileName(extractFileNameFromUrl(contractData.contract_explanation_file));
+            const url = contractData.contract_explanation_file;
+            const fileName = contractData.contract_explanation_file_name || extractFileNameFromUrl(url);
+            setF("contract_explanation_file_url", url);
+            setF("contract_explanation_file_name", fileName);
           }
           
           // ✅ تحميل التمديدات من API
@@ -313,26 +315,39 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
             setF("extensions", []);
           }
           
-          // ✅ تحميل المرفقات الثابتة
+          // ✅ تحميل المرفقات الثابتة في form state
           if (contractData.quantities_table_file) {
-            setQuantitiesTableFileUrl(contractData.quantities_table_file);
-            setQuantitiesTableFileName(extractFileNameFromUrl(contractData.quantities_table_file));
+            const url = contractData.quantities_table_file;
+            const fileName = contractData.quantities_table_file_name || extractFileNameFromUrl(url);
+            setF("quantities_table_file_url", url);
+            setF("quantities_table_file_name", fileName);
+            if (process.env.NODE_ENV === "development") {
+              console.log("✅ Loaded quantities_table_file:", { url, fileName });
+            }
           }
           if (contractData.approved_materials_table_file) {
-            setApprovedMaterialsTableFileUrl(contractData.approved_materials_table_file);
-            setApprovedMaterialsTableFileName(extractFileNameFromUrl(contractData.approved_materials_table_file));
+            const url = contractData.approved_materials_table_file;
+            const fileName = contractData.approved_materials_table_file_name || extractFileNameFromUrl(url);
+            setF("approved_materials_table_file_url", url);
+            setF("approved_materials_table_file_name", fileName);
           }
           if (contractData.price_offer_file) {
-            setPriceOfferFileUrl(contractData.price_offer_file);
-            setPriceOfferFileName(extractFileNameFromUrl(contractData.price_offer_file));
+            const url = contractData.price_offer_file;
+            const fileName = contractData.price_offer_file_name || extractFileNameFromUrl(url);
+            setF("price_offer_file_url", url);
+            setF("price_offer_file_name", fileName);
           }
           if (contractData.contractual_drawings_file) {
-            setContractualDrawingsFileUrl(contractData.contractual_drawings_file);
-            setContractualDrawingsFileName(extractFileNameFromUrl(contractData.contractual_drawings_file));
+            const url = contractData.contractual_drawings_file;
+            const fileName = contractData.contractual_drawings_file_name || extractFileNameFromUrl(url);
+            setF("contractual_drawings_file_url", url);
+            setF("contractual_drawings_file_name", fileName);
           }
           if (contractData.general_specifications_file) {
-            setGeneralSpecificationsFileUrl(contractData.general_specifications_file);
-            setGeneralSpecificationsFileName(extractFileNameFromUrl(contractData.general_specifications_file));
+            const url = contractData.general_specifications_file;
+            const fileName = contractData.general_specifications_file_name || extractFileNameFromUrl(url);
+            setF("general_specifications_file_url", url);
+            setF("general_specifications_file_name", fileName);
           }
         }
       } catch (e) {}
@@ -350,10 +365,21 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
 
   // بناء الحمولة والحفظ
   const buildPayload = () => {
-    if (!form.contract_type) throw new Error(t("contract.errors.select_type"));
+    // ✅ التحقق من نوع العقد بشكل أفضل (تجاهل القيم الفارغة أو null)
+    const contractType = (form.contract_type || "").trim();
+    if (!contractType || contractType === "") {
+      throw new Error(t("contract.errors.select_type"));
+    }
+    
     if (!form.contract_date) throw new Error(t("contract.errors.select_date"));
 
-    const total = num(form.total_project_value, NaN);
+    // ✅ التحقق من قيمة المشروع بشكل أفضل
+    const totalValue = form.total_project_value;
+    if (!totalValue || totalValue === "" || totalValue === null || totalValue === undefined) {
+      throw new Error(t("contract.errors.total_project_value_positive"));
+    }
+    
+    const total = num(totalValue, NaN);
     if (!Number.isFinite(total) || total <= 0) {
       throw new Error(t("contract.errors.total_project_value_positive"));
     }
@@ -383,12 +409,15 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
       }
     }
 
+    // ✅ تصفية الملاك لإرسال المالك المفوض فقط
+    const authorizedOwners = (form.owners || []).filter(o => o.is_authorized === true);
+    
     const jsonPayload = {
       contract_classification: form.contract_classification || "",
-      contract_type: form.contract_type,
+      contract_type: contractType, // ✅ استخدام المتغير المحلي
       tender_no: form.tender_no || "",
       contract_date: toIsoDate(form.contract_date),
-      owners: form.owners || [],
+      owners: authorizedOwners, // ✅ إرسال المالك المفوض فقط
       contractor_name: form.contractor_name || "",
       contractor_name_en: form.contractor_name_en || "",
       contractor_trade_license: form.contractor_trade_license || "",
@@ -611,41 +640,61 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
           const contractData = data[0];
           if (contractData.start_order_file) {
             setStartOrderFileUrl(contractData.start_order_file);
-            setStartOrderFileName(extractFileNameFromUrl(contractData.start_order_file));
+            setStartOrderFileName(contractData.start_order_file_name || extractFileNameFromUrl(contractData.start_order_file));
           }
+          // ✅ تحديث ملفات العقد في form state بعد الحفظ
           if (contractData.contract_file) {
-            setContractFileUrl(contractData.contract_file);
-            setContractFileName(extractFileNameFromUrl(contractData.contract_file));
+            const url = contractData.contract_file;
+            const fileName = contractData.contract_file_name || extractFileNameFromUrl(url);
+            setF("contract_file_url", url);
+            setF("contract_file_name", fileName);
           }
           if (contractData.contract_appendix_file) {
-            setContractAppendixFileUrl(contractData.contract_appendix_file);
-            setContractAppendixFileName(extractFileNameFromUrl(contractData.contract_appendix_file));
+            const url = contractData.contract_appendix_file;
+            const fileName = contractData.contract_appendix_file_name || extractFileNameFromUrl(url);
+            setF("contract_appendix_file_url", url);
+            setF("contract_appendix_file_name", fileName);
           }
           if (contractData.contract_explanation_file) {
-            setContractExplanationFileUrl(contractData.contract_explanation_file);
-            setContractExplanationFileName(extractFileNameFromUrl(contractData.contract_explanation_file));
+            const url = contractData.contract_explanation_file;
+            const fileName = contractData.contract_explanation_file_name || extractFileNameFromUrl(url);
+            setF("contract_explanation_file_url", url);
+            setF("contract_explanation_file_name", fileName);
           }
           
-          // ✅ تحديث URLs للمرفقات الثابتة
+          // ✅ تحديث URLs للمرفقات الثابتة في form state
           if (contractData.quantities_table_file) {
-            setQuantitiesTableFileUrl(contractData.quantities_table_file);
-            setQuantitiesTableFileName(extractFileNameFromUrl(contractData.quantities_table_file));
+            const url = contractData.quantities_table_file;
+            const fileName = contractData.quantities_table_file_name || extractFileNameFromUrl(url);
+            setF("quantities_table_file_url", url);
+            setF("quantities_table_file_name", fileName);
+            if (process.env.NODE_ENV === "development") {
+              console.log("✅ Updated quantities_table_file after save:", { url, fileName });
+            }
           }
           if (contractData.approved_materials_table_file) {
-            setApprovedMaterialsTableFileUrl(contractData.approved_materials_table_file);
-            setApprovedMaterialsTableFileName(extractFileNameFromUrl(contractData.approved_materials_table_file));
+            const url = contractData.approved_materials_table_file;
+            const fileName = contractData.approved_materials_table_file_name || extractFileNameFromUrl(url);
+            setF("approved_materials_table_file_url", url);
+            setF("approved_materials_table_file_name", fileName);
           }
           if (contractData.price_offer_file) {
-            setPriceOfferFileUrl(contractData.price_offer_file);
-            setPriceOfferFileName(extractFileNameFromUrl(contractData.price_offer_file));
+            const url = contractData.price_offer_file;
+            const fileName = contractData.price_offer_file_name || extractFileNameFromUrl(url);
+            setF("price_offer_file_url", url);
+            setF("price_offer_file_name", fileName);
           }
           if (contractData.contractual_drawings_file) {
-            setContractualDrawingsFileUrl(contractData.contractual_drawings_file);
-            setContractualDrawingsFileName(extractFileNameFromUrl(contractData.contractual_drawings_file));
+            const url = contractData.contractual_drawings_file;
+            const fileName = contractData.contractual_drawings_file_name || extractFileNameFromUrl(url);
+            setF("contractual_drawings_file_url", url);
+            setF("contractual_drawings_file_name", fileName);
           }
           if (contractData.general_specifications_file) {
-            setGeneralSpecificationsFileUrl(contractData.general_specifications_file);
-            setGeneralSpecificationsFileName(extractFileNameFromUrl(contractData.general_specifications_file));
+            const url = contractData.general_specifications_file;
+            const fileName = contractData.general_specifications_file_name || extractFileNameFromUrl(url);
+            setF("general_specifications_file_url", url);
+            setF("general_specifications_file_name", fileName);
           }
           
           // ✅ تحديث التمديدات بعد الحفظ (لتحميل file_url و file_name)
@@ -786,14 +835,14 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
               />
               <ViewRow
                 label={t("contract.fields.contract_date")}
-                value={form.contract_date}
+                value={formatDate(form.contract_date, i18next.language)}
                 tip={form.contract_date ? `${t("contract.labels.day")}: ${getDayName(form.contract_date, i18next.language)}` : undefined}
               />
-              {contractFileUrl && (
+              {form.contract_file_url && (
                 <Field label="رفع العقد الأصيل">
                   <FileAttachmentView
-                    fileUrl={contractFileUrl}
-                    fileName={contractFileName || (contractFileUrl ? extractFileNameFromUrl(contractFileUrl) : "") || (form.contract_file?.name || "")}
+                    fileUrl={form.contract_file_url}
+                    fileName={form.contract_file_name || (form.contract_file_url ? extractFileNameFromUrl(form.contract_file_url) : "") || (form.contract_file?.name || "")}
                     projectId={projectId}
                     endpoint={`projects/${projectId}/contract/`}
                   />
@@ -814,11 +863,10 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
               </Field>
               <Field label={t("contract.fields.contract_date")}>
                 <div className="row row--align-center row--gap-8">
-                  <input
+                  <DateInput
                     className="input"
-                    type="date"
                     value={form.contract_date || ""}
-                    onChange={(e) => setF("contract_date", e.target.value)}
+                    onChange={(value) => setF("contract_date", value)}
                   />
                   {form.contract_date && (
                     <InfoTip
@@ -835,11 +883,11 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                   accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
                   maxSizeMB={10}
                   showPreview={true}
-                  existingFileUrl={contractFileUrl}
-                  existingFileName={contractFileName || (contractFileUrl ? extractFileNameFromUrl(contractFileUrl) : "")}
+                  existingFileUrl={form.contract_file_url}
+                  existingFileName={form.contract_file_name || (form.contract_file_url ? extractFileNameFromUrl(form.contract_file_url) : "")}
                   onRemoveExisting={() => {
-                    setContractFileUrl("");
-                    setContractFileName("");
+                    setF("contract_file_url", null);
+                    setF("contract_file_name", null);
                     setF("contract_file", null);
                   }}
                   compressionOptions={{
@@ -938,11 +986,6 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                     cursor: "default"
                   }}
                 />
-                {form.total_owner_value && (
-                  <div className="mini mt-4">
-                    {numberToArabicWords(form.total_owner_value)}
-              </div>
-            )}
               </Field>
             </>
           )}
@@ -981,124 +1024,143 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
           }}>
             {t("contract.fields.first_party_owner") || "الطرف الأول (المالك)"}
           </h5>
-          {form.owners?.length ? (
-            <div>
-              {form.owners.map((o, i) => {
-                return (
-                  <div key={i} style={{ marginBottom: i < form.owners.length - 1 ? "24px" : "0" }}>
-                    <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
-                      {/* ✅ بيانات للعرض فقط - من SitePlan */}
-                      <Field label={t("owner_name_ar") || "الاسم (عربي)"}>
-                        {viewMode ? (
-                          <div style={{ 
-                            padding: "12px", 
-                            background: "var(--surface-2)", 
-                            borderRadius: "8px",
-                            fontSize: "16px",
-                            color: "var(--text)",
-                            fontWeight: "500"
-                          }}>
-                            {o.owner_name_ar || t("empty_value")}
-                          </div>
-                        ) : (
-                          <input
-                            className="input"
-                            readOnly
-                            value={o.owner_name_ar || ""}
-                            style={{
-                              background: "var(--surface-2)",
+          {(() => {
+            // ✅ تصفية الملاك لعرض المالك المفوض فقط
+            const authorizedOwners = form.owners?.filter(o => o.is_authorized === true) || [];
+            
+            if (authorizedOwners.length === 0) {
+              return (
+                <div className="row row--align-center row--gap-8">
+                  <InfoTip align="start" text={t("contract.notes.no_authorized_owner") || "لا يوجد مالك مفوض محدد"} />
+                </div>
+              );
+            }
+            
+            return (
+              <div>
+                {authorizedOwners.map((o, i) => {
+                  // ✅ البحث عن index الأصلي للمالك في form.owners لتحديث البيانات بشكل صحيح
+                  const originalIndex = form.owners.findIndex(owner => 
+                    owner.id_number === o.id_number && owner.owner_name_ar === o.owner_name_ar
+                  );
+                  
+                  return (
+                    <div key={i} style={{ marginBottom: i < authorizedOwners.length - 1 ? "24px" : "0" }}>
+                      <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
+                        {/* ✅ بيانات للعرض فقط - من SitePlan */}
+                        <Field label={t("owner_name_ar") || "الاسم (عربي)"}>
+                          {viewMode ? (
+                            <div style={{ 
+                              padding: "12px", 
+                              background: "var(--surface-2)", 
+                              borderRadius: "8px",
+                              fontSize: "16px",
                               color: "var(--text)",
-                              cursor: "default"
-                            }}
-                          />
-                        )}
-                      </Field>
-                      
-                      <Field label={t("owner_name_en") || "الاسم بالإنجليزية"}>
-                        {viewMode ? (
-                          <div style={{ 
-                            padding: "12px", 
-                            background: "var(--surface-2)", 
-                            borderRadius: "8px",
-                            fontSize: "16px",
-                            color: "var(--text)",
-                            fontWeight: "500"
-                          }}>
-                            {o.owner_name_en || t("empty_value")}
-                          </div>
-                        ) : (
-                          <input
-                            className="input"
-                            type="text"
-                            value={o.owner_name_en || ""}
-                            onChange={(e) => {
-                              const updated = [...form.owners];
-                              updated[i] = { ...updated[i], owner_name_en: e.target.value };
-                              setF("owners", updated);
-                            }}
-                            placeholder={t("owner_name_en_placeholder") || "اكتب الاسم بالإنجليزية"}
-                          />
-                        )}
-                      </Field>
-                      
-                      <Field label={t("id_number") || "رقم الهوية"}>
-                        {viewMode ? (
-                          <div style={{ 
-                            padding: "12px", 
-                            background: "var(--surface-2)", 
-                            borderRadius: "8px",
-                            fontSize: "16px",
-                            color: "var(--text)",
-                            fontWeight: "500"
-                          }}>
-                            {o.id_number || t("empty_value")}
-                          </div>
-                        ) : (
-                          <input
-                            className="input"
-                            readOnly
-                            value={o.id_number || ""}
-                            style={{
-                              background: "var(--surface-2)",
-                              color: "var(--text)",
-                              cursor: "default"
-                            }}
-                          />
-                        )}
-                      </Field>
-                      
-                      {/* ✅ حقل تاريخ الانتهاء مخفي */}
-                      <div></div>
-                      
-                      {/* ✅ حقول قابلة للإدخال - الهاتف والبريد */}
-                      <Field label={t("phone") || "الهاتف"}>
-                        {viewMode ? (
-                          <div style={{ 
-                            padding: "12px", 
-                            background: "var(--surface-2)", 
-                            borderRadius: "8px",
-                            fontSize: "16px",
-                            color: "var(--text)",
-                            fontWeight: "500"
-                          }}>
-                            {o.phone || t("empty_value")}
-                          </div>
-                        ) : (
-                          <div style={{ display: "flex", alignItems: "center", flexDirection: "row-reverse" }}>
-                            <span
+                              fontWeight: "500"
+                            }}>
+                              {o.owner_name_ar || t("empty_value")}
+                            </div>
+                          ) : (
+                            <input
+                              className="input"
+                              readOnly
+                              value={o.owner_name_ar || ""}
                               style={{
-                                padding: "10px 12px",
                                 background: "var(--surface-2)",
-                                border: "1px solid var(--border)",
-                                borderRadius: "8px",
-                                minWidth: "70px",
-                                textAlign: "center",
-                                color: "var(--muted)",
-                                marginRight: "8px",
+                                color: "var(--text)",
+                                cursor: "default"
                               }}
-                            >
-                              +971
-                            </span>
+                            />
+                          )}
+                        </Field>
+                        
+                        <Field label={t("owner_name_en") || "الاسم بالإنجليزية"}>
+                          {viewMode ? (
+                            <div style={{ 
+                              padding: "12px", 
+                              background: "var(--surface-2)", 
+                              borderRadius: "8px",
+                              fontSize: "16px",
+                              color: "var(--text)",
+                              fontWeight: "500"
+                            }}>
+                              {o.owner_name_en || t("empty_value")}
+                            </div>
+                          ) : (
+                            <input
+                              className="input"
+                              type="text"
+                              value={o.owner_name_en || ""}
+                              onChange={(e) => {
+                                const updated = [...form.owners];
+                                if (originalIndex !== -1) {
+                                  updated[originalIndex] = { ...updated[originalIndex], owner_name_en: e.target.value };
+                                  setF("owners", updated);
+                                }
+                              }}
+                              placeholder={t("owner_name_en_placeholder") || "اكتب الاسم بالإنجليزية"}
+                            />
+                          )}
+                        </Field>
+                        
+                        <Field label={t("id_number") || "رقم الهوية"}>
+                          {viewMode ? (
+                            <div style={{ 
+                              padding: "12px", 
+                              background: "var(--surface-2)", 
+                              borderRadius: "8px",
+                              fontSize: "16px",
+                              color: "var(--text)",
+                              fontWeight: "500"
+                            }}>
+                              {o.id_number || t("empty_value")}
+                            </div>
+                          ) : (
+                            <input
+                              className="input"
+                              readOnly
+                              value={o.id_number || ""}
+                              style={{
+                                background: "var(--surface-2)",
+                                color: "var(--text)",
+                                cursor: "default"
+                              }}
+                            />
+                          )}
+                        </Field>
+                        
+                        {/* ✅ حقل تاريخ الانتهاء مخفي */}
+                        <div></div>
+                        
+                        {/* ✅ حقول قابلة للإدخال - الهاتف والبريد */}
+                        <Field label={t("phone") || "الهاتف"}>
+                          {viewMode ? (
+                            <div style={{ 
+                              padding: "12px", 
+                              background: "var(--surface-2)", 
+                              borderRadius: "8px",
+                              fontSize: "16px",
+                              color: "var(--text)",
+                              fontWeight: "500"
+                            }}>
+                              {o.phone || t("empty_value")}
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", alignItems: "center", flexDirection: "row-reverse" }}>
+                              <span
+                                style={{
+                                  padding: "10px 12px",
+                                  background: "var(--surface-2)",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: "8px",
+                                  minWidth: "70px",
+                                  textAlign: "center",
+                                  color: "var(--muted)",
+                                  marginRight: "8px",
+                                }}
+                              >
+                                +971
+                              </span>
                           <input
                             className="input"
                             type="tel"
@@ -1108,52 +1170,53 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                                 const trimmed = digits.replace(/^0+/, "").slice(0, 9);
                                 const formatted = trimmed ? `+971${trimmed}` : "";
                               const updated = [...form.owners];
-                              updated[i] = { ...updated[i], phone: formatted };
-                              setF("owners", updated);
+                              if (originalIndex !== -1) {
+                                updated[originalIndex] = { ...updated[originalIndex], phone: formatted };
+                                setF("owners", updated);
+                              }
                             }}
                               placeholder={t("phone_placeholder") || "أدخل رقم الهاتف"}
                               inputMode="numeric"
                           />
                           </div>
-                        )}
-                      </Field>
-                      
-                      <Field label={t("email") || "البريد الإلكتروني"}>
-                        {viewMode ? (
-                          <div style={{ 
-                            padding: "12px", 
-                            background: "var(--surface-2)", 
-                            borderRadius: "8px",
-                            fontSize: "16px",
-                            color: "var(--text)",
-                            fontWeight: "500"
-                          }}>
-                            {o.email || t("empty_value")}
-                          </div>
-                        ) : (
-                          <input
-                            className="input"
-                            type="email"
-                            value={o.email || ""}
-                            onChange={(e) => {
-                              const updated = [...form.owners];
-                              updated[i] = { ...updated[i], email: e.target.value };
-                              setF("owners", updated);
-                            }}
-                            placeholder={t("email_placeholder") || "أدخل البريد الإلكتروني"}
-                          />
-                        )}
-                      </Field>
+                          )}
+                        </Field>
+                        
+                        <Field label={t("email") || "البريد الإلكتروني"}>
+                          {viewMode ? (
+                            <div style={{ 
+                              padding: "12px", 
+                              background: "var(--surface-2)", 
+                              borderRadius: "8px",
+                              fontSize: "16px",
+                              color: "var(--text)",
+                              fontWeight: "500"
+                            }}>
+                              {o.email || t("empty_value")}
+                            </div>
+                          ) : (
+                            <input
+                              className="input"
+                              type="email"
+                              value={o.email || ""}
+                              onChange={(e) => {
+                                const updated = [...form.owners];
+                                if (originalIndex !== -1) {
+                                  updated[originalIndex] = { ...updated[originalIndex], email: e.target.value };
+                                  setF("owners", updated);
+                                }
+                              }}
+                              placeholder={t("email_placeholder") || "أدخل البريد الإلكتروني"}
+                            />
+                          )}
+                        </Field>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="row row--align-center row--gap-8">
-              <InfoTip align="start" text={t("contract.notes.no_owners_siteplan")} />
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            );
+          })()}
           </div>
 
           {/* الطرف الثاني - المقاول - بيانات ثابتة من إعدادات الشركة (Read Only) */}
@@ -1260,155 +1323,95 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         {/* ✅ المرفقات الثابتة */}
         <div style={{ marginBottom: "var(--space-6)" }}>
           <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
-            <Field label="1) جدول الكميات">
-              {viewMode ? (
-                quantitiesTableFileUrl ? (
-                  <FileAttachmentView
-                    fileUrl={quantitiesTableFileUrl}
-                    fileName={quantitiesTableFileName || extractFileNameFromUrl(quantitiesTableFileUrl)}
-                    projectId={projectId}
-                    endpoint={`projects/${projectId}/contract/`}
-                  />
-                ) : (
-                  <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
-                )
-              ) : (
-                <FileUpload
-                  value={form.quantities_table_file}
-                  onChange={(file) => setF("quantities_table_file", file)}
-                  accept=".pdf,.xlsx,.xls"
-                  maxSizeMB={10}
-                  showPreview={true}
-                  existingFileUrl={quantitiesTableFileUrl}
-                  existingFileName={quantitiesTableFileName}
-                  onRemoveExisting={() => {
-                    setQuantitiesTableFileUrl("");
-                    setQuantitiesTableFileName("");
-                    setF("quantities_table_file", null);
-                  }}
-                />
-              )}
-            </Field>
+            <StaticContractAttachmentFile
+              label="1) جدول الكميات"
+              value={form.quantities_table_file}
+              fileUrl={form.quantities_table_file_url}
+              fileName={form.quantities_table_file_name}
+              onChange={(file) => setF("quantities_table_file", file)}
+              onRemoveExisting={() => {
+                setF("quantities_table_file_url", null);
+                setF("quantities_table_file_name", null);
+                setF("quantities_table_file", null);
+              }}
+              accept=".pdf,.xlsx,.xls"
+              maxSizeMB={10}
+              isView={viewMode}
+              projectId={projectId}
+              endpoint={`projects/${projectId}/contract/`}
+            />
             
-            <Field label="2) جدول المواد المعتمدة">
-              {viewMode ? (
-                approvedMaterialsTableFileUrl ? (
-                  <FileAttachmentView
-                    fileUrl={approvedMaterialsTableFileUrl}
-                    fileName={approvedMaterialsTableFileName || extractFileNameFromUrl(approvedMaterialsTableFileUrl)}
-                    projectId={projectId}
-                    endpoint={`projects/${projectId}/contract/`}
-                  />
-                ) : (
-                  <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
-                )
-              ) : (
-                <FileUpload
-                  value={form.approved_materials_table_file}
-                  onChange={(file) => setF("approved_materials_table_file", file)}
-                  accept=".pdf,.xlsx,.xls"
-                  maxSizeMB={10}
-                  showPreview={true}
-                  existingFileUrl={approvedMaterialsTableFileUrl}
-                  existingFileName={approvedMaterialsTableFileName}
-                  onRemoveExisting={() => {
-                    setApprovedMaterialsTableFileUrl("");
-                    setApprovedMaterialsTableFileName("");
-                    setF("approved_materials_table_file", null);
-                  }}
-                />
-              )}
-            </Field>
+            <StaticContractAttachmentFile
+              label="2) جدول المواد المعتمدة"
+              value={form.approved_materials_table_file}
+              fileUrl={form.approved_materials_table_file_url}
+              fileName={form.approved_materials_table_file_name}
+              onChange={(file) => setF("approved_materials_table_file", file)}
+              onRemoveExisting={() => {
+                setF("approved_materials_table_file_url", null);
+                setF("approved_materials_table_file_name", null);
+                setF("approved_materials_table_file", null);
+              }}
+              accept=".pdf,.xlsx,.xls"
+              maxSizeMB={10}
+              isView={viewMode}
+              projectId={projectId}
+              endpoint={`projects/${projectId}/contract/`}
+            />
             
-            <Field label="3) عرض السعر">
-              {viewMode ? (
-                priceOfferFileUrl ? (
-                  <FileAttachmentView
-                    fileUrl={priceOfferFileUrl}
-                    fileName={priceOfferFileName || extractFileNameFromUrl(priceOfferFileUrl)}
-                    projectId={projectId}
-                    endpoint={`projects/${projectId}/contract/`}
-                  />
-                ) : (
-                  <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
-                )
-              ) : (
-                <FileUpload
-                  value={form.price_offer_file}
-                  onChange={(file) => setF("price_offer_file", file)}
-                  accept=".pdf,.xlsx,.xls"
-                  maxSizeMB={10}
-                  showPreview={true}
-                  existingFileUrl={priceOfferFileUrl}
-                  existingFileName={priceOfferFileName}
-                  onRemoveExisting={() => {
-                    setPriceOfferFileUrl("");
-                    setPriceOfferFileName("");
-                    setF("price_offer_file", null);
-                  }}
-                />
-              )}
-            </Field>
+            <StaticContractAttachmentFile
+              label="3) عرض السعر"
+              value={form.price_offer_file}
+              fileUrl={form.price_offer_file_url}
+              fileName={form.price_offer_file_name}
+              onChange={(file) => setF("price_offer_file", file)}
+              onRemoveExisting={() => {
+                setF("price_offer_file_url", null);
+                setF("price_offer_file_name", null);
+                setF("price_offer_file", null);
+              }}
+              accept=".pdf,.xlsx,.xls"
+              maxSizeMB={10}
+              isView={viewMode}
+              projectId={projectId}
+              endpoint={`projects/${projectId}/contract/`}
+            />
             
-            <Field label="4) مخططات تعاقدية">
-              {viewMode ? (
-                contractualDrawingsFileUrl ? (
-                  <FileAttachmentView
-                    fileUrl={contractualDrawingsFileUrl}
-                    fileName={contractualDrawingsFileName || extractFileNameFromUrl(contractualDrawingsFileUrl)}
-                    projectId={projectId}
-                    endpoint={`projects/${projectId}/contract/`}
-                  />
-                ) : (
-                  <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
-                )
-              ) : (
-                <FileUpload
-                  value={form.contractual_drawings_file}
-                  onChange={(file) => setF("contractual_drawings_file", file)}
-                  accept=".pdf,.dwg,.dxf"
-                  maxSizeMB={10}
-                  showPreview={true}
-                  existingFileUrl={contractualDrawingsFileUrl}
-                  existingFileName={contractualDrawingsFileName}
-                  onRemoveExisting={() => {
-                    setContractualDrawingsFileUrl("");
-                    setContractualDrawingsFileName("");
-                    setF("contractual_drawings_file", null);
-                  }}
-                />
-              )}
-            </Field>
+            <StaticContractAttachmentFile
+              label="4) مخططات تعاقدية"
+              value={form.contractual_drawings_file}
+              fileUrl={form.contractual_drawings_file_url}
+              fileName={form.contractual_drawings_file_name}
+              onChange={(file) => setF("contractual_drawings_file", file)}
+              onRemoveExisting={() => {
+                setF("contractual_drawings_file_url", null);
+                setF("contractual_drawings_file_name", null);
+                setF("contractual_drawings_file", null);
+              }}
+              accept=".pdf,.dwg,.dxf"
+              maxSizeMB={10}
+              isView={viewMode}
+              projectId={projectId}
+              endpoint={`projects/${projectId}/contract/`}
+            />
             
-            <Field label="5) المواصفات العامة والخاصة">
-              {viewMode ? (
-                generalSpecificationsFileUrl ? (
-                  <FileAttachmentView
-                    fileUrl={generalSpecificationsFileUrl}
-                    fileName={generalSpecificationsFileName || extractFileNameFromUrl(generalSpecificationsFileUrl)}
-                    projectId={projectId}
-                    endpoint={`projects/${projectId}/contract/`}
-                  />
-                ) : (
-                  <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
-                )
-              ) : (
-                <FileUpload
-                  value={form.general_specifications_file}
-                  onChange={(file) => setF("general_specifications_file", file)}
-                  accept=".pdf,.doc,.docx"
-                  maxSizeMB={10}
-                  showPreview={true}
-                  existingFileUrl={generalSpecificationsFileUrl}
-                  existingFileName={generalSpecificationsFileName}
-                  onRemoveExisting={() => {
-                    setGeneralSpecificationsFileUrl("");
-                    setGeneralSpecificationsFileName("");
-                    setF("general_specifications_file", null);
-                  }}
-                />
-              )}
-            </Field>
+            <StaticContractAttachmentFile
+              label="5) المواصفات العامة والخاصة"
+              value={form.general_specifications_file}
+              fileUrl={form.general_specifications_file_url}
+              fileName={form.general_specifications_file_name}
+              onChange={(file) => setF("general_specifications_file", file)}
+              onRemoveExisting={() => {
+                setF("general_specifications_file_url", null);
+                setF("general_specifications_file_name", null);
+                setF("general_specifications_file", null);
+              }}
+              accept=".pdf,.doc,.docx"
+              maxSizeMB={10}
+              isView={viewMode}
+              projectId={projectId}
+              endpoint={`projects/${projectId}/contract/`}
+            />
           </div>
         </div>
         
@@ -1555,10 +1558,10 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                     endpoint={`projects/${projectId}/contract/`}
                   />
                 </Field>
-                <ViewRow label={t("start_order_date")} value={form.start_order_date} />
+                <ViewRow label={t("start_order_date")} value={formatDate(form.start_order_date, i18next.language)} />
                 <ViewRow 
                   label={t("project_end_date_calculated")} 
-                  value={form.project_end_date}
+                  value={formatDate(form.project_end_date, i18next.language)}
                   style={{
                     padding: "16px",
                     background: "var(--primary-light, rgba(59, 130, 246, 0.1))",
@@ -1621,11 +1624,10 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
               {(form.start_order_file || startOrderFileUrl) && (
                 <>
                   <Field label={t("start_order_date")}>
-                    <input
-                      type="date"
+                    <DateInput
                       className="input"
                       value={form.start_order_date || ""}
-                      onChange={(e) => setF("start_order_date", e.target.value)}
+                      onChange={(value) => setF("start_order_date", value)}
                     />
                   </Field>
                   <Field label={t("project_end_date_calculated")}>

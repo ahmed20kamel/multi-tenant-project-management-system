@@ -5,7 +5,9 @@ import { api } from '../../../services/api';
 import Card from '../../../components/common/Card';
 import Button from '../../../components/common/Button';
 import Field from '../../../components/forms/Field';
+import DateInput from '../../../components/fields/DateInput';
 import { FaBuilding, FaUsers, FaFolderOpen, FaEdit, FaToggleOn, FaToggleOff, FaCalendarAlt } from 'react-icons/fa';
+import { formatDate } from '../../../utils/formatters';
 
 export default function AdminTenantsPage() {
   const { user } = useAuth();
@@ -327,19 +329,17 @@ export default function AdminTenantsPage() {
                         />
                       </Field>
                       <Field label="تاريخ بداية الاشتراك">
-                        <input
-                          type="date"
+                        <DateInput
                           className="input"
                           value={formData.subscription_start_date}
-                          onChange={(e) => setFormData({ ...formData, subscription_start_date: e.target.value })}
+                          onChange={(value) => setFormData({ ...formData, subscription_start_date: value })}
                         />
                       </Field>
                       <Field label="تاريخ نهاية الاشتراك">
-                        <input
-                          type="date"
+                        <DateInput
                           className="input"
                           value={formData.subscription_end_date}
-                          onChange={(e) => setFormData({ ...formData, subscription_end_date: e.target.value })}
+                          onChange={(value) => setFormData({ ...formData, subscription_end_date: value })}
                         />
                       </Field>
                       <Field label="حالة الاشتراك">
@@ -379,7 +379,7 @@ export default function AdminTenantsPage() {
                             تاريخ البداية
                           </div>
                           <div style={{ fontSize: 'var(--font-size-base)', color: 'var(--color-text-primary)' }}>
-                            {new Date(tenant.subscription_start_date).toLocaleDateString()}
+                            {formatDate(tenant.subscription_start_date, i18n.language)}
                           </div>
                         </div>
                       )}
@@ -389,7 +389,7 @@ export default function AdminTenantsPage() {
                             تاريخ النهاية
                           </div>
                           <div style={{ fontSize: 'var(--font-size-base)', color: 'var(--color-text-primary)' }}>
-                            {new Date(tenant.subscription_end_date).toLocaleDateString()}
+                            {formatDate(tenant.subscription_end_date, i18n.language)}
                           </div>
                         </div>
                       )}

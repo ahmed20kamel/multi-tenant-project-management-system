@@ -12,8 +12,10 @@ export const normalizeDigits = (s) =>
 /**
  * التحقق من أن التاريخ هو placeholder
  */
-export const isPlaceholderDate = (s) =>
-  /^dd\s*\/\s*mm\s*\/\s*yyyy$/i.test(String(s).trim());
+export const isPlaceholderDate = (s) => {
+  const str = String(s).trim();
+  return /^dd\s*[\/-]\s*mm\s*[\/-]\s*yyyy$/i.test(str);
+};
 
 /**
  * تحويل التاريخ إلى تنسيق input مع معالجة الأرقام العربية

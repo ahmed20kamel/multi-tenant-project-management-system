@@ -6,6 +6,7 @@ import PageLayout from "../../../components/layout/PageLayout";
 import Button from "../../../components/common/Button";
 import ViewRow from "../../../components/forms/ViewRow";
 import { FaUser, FaEdit } from "react-icons/fa";
+import { calculateAgeFromEmiratesId } from "../../../utils/inputFormatters";
 
 export default function OwnerDetailPage() {
   const { ownerName } = useParams();
@@ -89,6 +90,8 @@ export default function OwnerDetailPage() {
   }
 
   const fullOwnerData = ownerData.fullData || {};
+  // ✅ استخدام العمر من الـ backend إن وجد، وإلا نحسبه من رقم الهوية
+  const age = fullOwnerData.age ?? calculateAgeFromEmiratesId(fullOwnerData.id_number);
 
   return (
     <PageLayout>
@@ -221,7 +224,9 @@ export default function OwnerDetailPage() {
                 <p style={{ 
                   fontSize: "16px", 
                   color: "var(--muted)",
-                  margin: 0
+                  margin: 0,
+                  direction: "ltr",
+                  textAlign: "left"
                 }}>
                   {ownerData.nameEn}
                 </p>
@@ -262,6 +267,12 @@ export default function OwnerDetailPage() {
                 <ViewRow 
                   label={t("id_number") || "ID Number"} 
                   value={fullOwnerData.id_number}
+                />
+              )}
+              {age !== null && (
+                <ViewRow 
+                  label={t("age")} 
+                  value={`${age} ${isAR ? t("year") : t("years")}`}
                 />
               )}
               {fullOwnerData.phone && (

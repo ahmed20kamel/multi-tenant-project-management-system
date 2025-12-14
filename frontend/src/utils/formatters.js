@@ -98,25 +98,17 @@ export const formatDate = (dateStr, locale = "ar") => {
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return "—";
     
-    if (locale === "ar") {
-      const dd = String(date.getDate()).padStart(2, "0");
-      const mm = String(date.getMonth() + 1).padStart(2, "0");
-      const yyyy = date.getFullYear();
-      return `${dd}/${mm}/${yyyy}`;
-    } else {
-      return date.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      });
-    }
+    const dd = String(date.getDate()).padStart(2, "0");
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const yyyy = date.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
   } catch {
     return "—";
   }
 };
 
 /**
- * تحويل التاريخ من تنسيق العرض (dd/mm/yyyy) إلى ISO (yyyy-mm-dd)
+ * تحويل التاريخ من تنسيق العرض (dd/mm/yyyy أو dd-mm-yyyy) إلى ISO (yyyy-mm-dd)
  * @param {string} dateStr - التاريخ بصيغة العرض
  * @returns {string|null} - التاريخ بصيغة ISO أو null
  */
@@ -126,8 +118,14 @@ export const toIsoDate = (dateStr) => {
   // إذا كان بالفعل بصيغة ISO
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
   
-  // تحويل من dd/mm/yyyy إلى yyyy-mm-dd
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dateStr);
+  // تحويل من dd/mm/yyyy إلى yyyy-mm-dd (التنسيق الأساسي)
+  let match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dateStr);
+  if (match) {
+    return `${match[3]}-${match[2]}-${match[1]}`;
+  }
+  
+  // تحويل من dd-mm-yyyy إلى yyyy-mm-dd (للتوافق مع البيانات القديمة)
+  match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dateStr);
   if (match) {
     return `${match[3]}-${match[2]}-${match[1]}`;
   }
@@ -137,7 +135,7 @@ export const toIsoDate = (dateStr) => {
 
 /**
  * تحويل التاريخ من ISO إلى تنسيق input (yyyy-mm-dd)
- * @param {string} dateStr - التاريخ بصيغة ISO أو dd/mm/yyyy
+ * @param {string} dateStr - التاريخ بصيغة ISO أو dd/mm/yyyy أو dd-mm-yyyy
  * @returns {string} - التاريخ بصيغة input
  */
 export const toInputDate = (dateStr) => {
@@ -146,13 +144,75 @@ export const toInputDate = (dateStr) => {
   // إذا كان بالفعل بصيغة ISO
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
   
-  // تحويل من dd/mm/yyyy إلى yyyy-mm-dd
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dateStr);
+  // تحويل من dd/mm/yyyy إلى yyyy-mm-dd (التنسيق الأساسي)
+  let match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dateStr);
+  if (match) {
+    return `${match[3]}-${match[2]}-${match[1]}`;
+  }
+  
+  // تحويل من dd-mm-yyyy إلى yyyy-mm-dd (للتوافق مع البيانات القديمة)
+  match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dateStr);
   if (match) {
     return `${match[3]}-${match[2]}-${match[1]}`;
   }
   
   return dateStr;
+};
+
+/**
+ * تحويل التاريخ من ISO إلى تنسيق العرض DD/MM/YYYY
+ * @param {string} dateStr - التاريخ بصيغة ISO (yyyy-mm-dd)
+ * @returns {string} - التاريخ بصيغة DD/MM/YYYY أو "" إذا كان فارغاً
+ */
+export const formatDateInput = (dateStr) => {
+  if (!dateStr) return "";
+  
+  try {
+    // إذا كان بالفعل بصيغة ISO
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [year, month, day] = dateStr.split("-");
+      return `${day}/${month}/${year}`;
+    }
+    
+    // إذا كان بصيغة dd/mm/yyyy، نعيده كما هو
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+      return dateStr;
+    }
+    
+    // محاولة تحويل من أي تنسيق آخر
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return "";
+    
+    const dd = String(date.getDate()).padStart(2, "0");
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const yyyy = date.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  } catch {
+    return "";
+  }
+};
+
+/**
+ * تنسيق إدخال التاريخ أثناء الكتابة (DD/MM/YYYY)
+ * @param {string} value - القيمة المدخلة
+ * @returns {string} - القيمة المنسقة
+ */
+export const formatDateInputValue = (value) => {
+  if (!value) return "";
+  
+  // إزالة أي شيء غير رقم
+  const digits = value.replace(/\D/g, "");
+  
+  // تطبيق الـ mask مع حد أقصى 8 أرقام (DDMMYYYY)
+  const limitedDigits = digits.slice(0, 8);
+  
+  if (limitedDigits.length <= 2) {
+    return limitedDigits;
+  } else if (limitedDigits.length <= 4) {
+    return `${limitedDigits.slice(0, 2)}/${limitedDigits.slice(2)}`;
+  } else {
+    return `${limitedDigits.slice(0, 2)}/${limitedDigits.slice(2, 4)}/${limitedDigits.slice(4, 8)}`;
+  }
 };
 
 /**

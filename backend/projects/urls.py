@@ -9,6 +9,7 @@ from .views import (
     PaymentViewSet,
     VariationViewSet,
     ActualInvoiceViewSet,
+    download_file,
 )
 
 # Projects
@@ -90,4 +91,7 @@ urlpatterns = [
     # ✅ Invoice endpoints
     path("projects/<int:project_pk>/actual-invoices/", actual_invoice_list, name="actual-invoice-list"),
     path("projects/<int:project_pk>/actual-invoices/<int:pk>/", actual_invoice_detail, name="actual-invoice-detail"),
+    
+    # ✅ Protected File Download endpoint
+    path("files/<path:file_path>", download_file, name="download-file"),
 ]

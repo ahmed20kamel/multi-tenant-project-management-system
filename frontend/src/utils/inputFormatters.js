@@ -176,3 +176,51 @@ export const calculateBirthDateFromEmiratesId = (idNumber) => {
   }
 };
 
+/**
+ * حساب العمر من رقم الهوية الإماراتية
+ * رقم الهوية: 784-YYYY-XXXXXXX-X
+ * الجزء الثاني (YYYY) يمثل سنة الميلاد
+ * @param {string} idNumber - رقم الهوية
+ * @returns {number|null} - العمر بالسنوات أو null إذا كان الرقم غير صالح
+ */
+export const calculateAgeFromEmiratesId = (idNumber) => {
+  if (!idNumber || typeof idNumber !== "string") return null;
+  
+  // إزالة الفواصل والمسافات
+  const cleaned = String(idNumber).replace(/[-\s]/g, "");
+  
+  // محاولة استخراج سنة الميلاد من التنسيق: 784-YYYY-XXXXXXX-X
+  // أو من التنسيق بدون فواصل: 784YYYYXXXXXXX
+  let birthYear = null;
+  
+  // طريقة 1: إذا كان الرقم يحتوي على فواصل (مثل: 784-1991-9691717-5)
+  if (idNumber.includes("-")) {
+    const parts = idNumber.split("-");
+    if (parts.length >= 2 && parts[1]) {
+      const yearStr = parts[1].trim();
+      const yearNum = parseInt(yearStr, 10);
+      if (!isNaN(yearNum) && yearNum >= 1900 && yearNum <= new Date().getFullYear()) {
+        birthYear = yearNum;
+      }
+    }
+  }
+  
+  // طريقة 2: إذا لم نجد سنة من الفواصل، نحاول من المواضع 4-7
+  if (birthYear === null && cleaned.length >= 8) {
+    const yearStr = cleaned.substring(3, 7);
+    const yearNum = parseInt(yearStr, 10);
+    if (!isNaN(yearNum) && yearNum >= 1900 && yearNum <= new Date().getFullYear()) {
+      birthYear = yearNum;
+    }
+  }
+  
+  // حساب العمر
+  if (birthYear !== null) {
+    const currentYear = new Date().getFullYear();
+    const age = currentYear - birthYear;
+    return age >= 0 ? age : null;
+  }
+  
+  return null;
+};
+

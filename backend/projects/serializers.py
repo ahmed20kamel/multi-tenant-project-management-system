@@ -19,47 +19,82 @@ except ImportError:
 def build_siteplan_snapshot(sp: SitePlan):
     """إنشاء لقطة ثابتة من الـ SitePlan (بما فيها الملاك والملفات)."""
     owners = []
-    for o in sp.owners.all().order_by("id"):
-        owners.append({
-            "owner_name_ar": o.owner_name_ar,
-            "owner_name_en": o.owner_name_en,
-            "nationality": o.nationality,
-            "phone": o.phone,
-            "email": o.email,
-            "id_number": o.id_number,
-            "id_issue_date": o.id_issue_date.isoformat() if o.id_issue_date else None,
-            "id_expiry_date": o.id_expiry_date.isoformat() if o.id_expiry_date else None,
-            "share_possession": o.share_possession,
-            "right_hold_type": o.right_hold_type,
-            "share_percent": float(o.share_percent) if o.share_percent is not None else None,
-            "id_attachment": o.id_attachment.url if o.id_attachment else None,
-        })
+    try:
+        for o in sp.owners.all().order_by("id"):
+            try:
+                # ✅ معالجة آمنة لـ id_attachment
+                id_attachment_url = None
+                if hasattr(o, 'id_attachment') and o.id_attachment:
+                    try:
+                        id_attachment_url = o.id_attachment.url if hasattr(o.id_attachment, 'url') else None
+                    except Exception:
+                        id_attachment_url = None
+                
+                owner_data = {
+                    "owner_name_ar": getattr(o, 'owner_name_ar', ''),
+                    "owner_name_en": getattr(o, 'owner_name_en', ''),
+                    "nationality": getattr(o, 'nationality', ''),
+                    "phone": getattr(o, 'phone', ''),
+                    "email": getattr(o, 'email', ''),
+                    "id_number": getattr(o, 'id_number', ''),
+                    "id_issue_date": o.id_issue_date.isoformat() if hasattr(o, 'id_issue_date') and o.id_issue_date else None,
+                    "id_expiry_date": o.id_expiry_date.isoformat() if hasattr(o, 'id_expiry_date') and o.id_expiry_date else None,
+                    "share_possession": getattr(o, 'share_possession', ''),
+                    "right_hold_type": getattr(o, 'right_hold_type', 'Ownership'),
+                    "share_percent": float(o.share_percent) if hasattr(o, 'share_percent') and o.share_percent is not None else None,
+                    "id_attachment": id_attachment_url,
+                    "age": getattr(o, 'age', None) if hasattr(o, 'age') else None,  # ✅ العمر المحسوب تلقائياً
+                    "is_authorized": getattr(o, 'is_authorized', False) if hasattr(o, 'is_authorized') else False,  # ✅ المالك المفوض
+                }
+                owners.append(owner_data)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error building snapshot for owner {getattr(o, 'id', 'unknown')}: {e}")
+                # ✅ تخطي المالك الذي به خطأ والمتابعة
+                continue
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error building owners snapshot for SitePlan {getattr(sp, 'id', 'unknown')}: {e}", exc_info=True)
+        owners = []  # ✅ قائمة فارغة في حالة الخطأ
+    # ✅ معالجة آمنة لـ application_file
+    application_file_url = None
+    try:
+        if hasattr(sp, 'application_file') and sp.application_file:
+            application_file_url = sp.application_file.url if hasattr(sp.application_file, 'url') else None
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Error accessing application_file for SitePlan {getattr(sp, 'id', 'unknown')}: {e}")
+        application_file_url = None
+    
     return {
         "property": {
-            "municipality": sp.municipality,
-            "zone": sp.zone,
-            "sector": sp.sector,
-            "road_name": sp.road_name,
-            "plot_area_sqm": float(sp.plot_area_sqm) if sp.plot_area_sqm is not None else None,
-            "plot_area_sqft": float(sp.plot_area_sqft) if sp.plot_area_sqft is not None else None,
-            "land_no": sp.land_no,
-            "plot_address": sp.plot_address,
-            "construction_status": sp.construction_status,
-            "allocation_type": sp.allocation_type,
-            "land_use": sp.land_use,
-            "base_district": sp.base_district,
-            "overlay_district": sp.overlay_district,
-            "allocation_date": sp.allocation_date.isoformat() if sp.allocation_date else None,
+            "municipality": getattr(sp, 'municipality', ''),
+            "zone": getattr(sp, 'zone', ''),
+            "sector": getattr(sp, 'sector', ''),
+            "road_name": getattr(sp, 'road_name', ''),
+            "plot_area_sqm": float(sp.plot_area_sqm) if hasattr(sp, 'plot_area_sqm') and sp.plot_area_sqm is not None else None,
+            "plot_area_sqft": float(sp.plot_area_sqft) if hasattr(sp, 'plot_area_sqft') and sp.plot_area_sqft is not None else None,
+            "land_no": getattr(sp, 'land_no', ''),
+            "plot_address": getattr(sp, 'plot_address', ''),
+            "construction_status": getattr(sp, 'construction_status', ''),
+            "allocation_type": getattr(sp, 'allocation_type', ''),
+            "land_use": getattr(sp, 'land_use', ''),
+            "base_district": getattr(sp, 'base_district', ''),
+            "overlay_district": getattr(sp, 'overlay_district', ''),
+            "allocation_date": sp.allocation_date.isoformat() if hasattr(sp, 'allocation_date') and sp.allocation_date else None,
         },
         "developer": {
-            "developer_name": sp.developer_name,
-            "project_no": sp.project_no,
-            "project_name": sp.project_name,
+            "developer_name": getattr(sp, 'developer_name', ''),
+            "project_no": getattr(sp, 'project_no', ''),
+            "project_name": getattr(sp, 'project_name', ''),
         },
         "application": {
-            "application_number": sp.application_number,
-            "application_date": sp.application_date.isoformat() if sp.application_date else None,
-            "application_file": sp.application_file.url if sp.application_file else None,
+            "application_number": getattr(sp, 'application_number', ''),
+            "application_date": sp.application_date.isoformat() if hasattr(sp, 'application_date') and sp.application_date else None,
+            "application_file": application_file_url,
         },
         "owners": owners,
         "notes": sp.notes,
@@ -233,7 +268,7 @@ class ProjectSerializer(serializers.ModelSerializer):
         return normalized
 
     def get_display_name(self, obj):
-        # نكوّن الاسم من أول مالك في الـ SitePlan، ولو أكثر من مالك نضيف "وشركاؤه"
+        # نكوّن الاسم من المالك المفوض في الـ SitePlan، ولو أكثر من مالك نضيف "وشركاؤه"
         # ✅ إذا كان obj.name موجوداً، نستخدمه أولاً (هذا هو الاسم المحفوظ من الملاك)
         if obj.name and obj.name.strip():
             return obj.name
@@ -247,14 +282,24 @@ class ProjectSerializer(serializers.ModelSerializer):
         main_name = ""
         owners_count = 0
         if sp:
-            qs = sp.owners.order_by("id")
+            qs = sp.owners.all()
             owners_count = qs.count()
-            for o in qs:
-                ar = (o.owner_name_ar or "").strip()
-                en = (o.owner_name_en or "").strip()
-                if ar or en:
-                    main_name = ar or en
-                    break
+            
+            # ✅ البحث عن المالك المفوض أولاً
+            authorized_owner = qs.filter(is_authorized=True).first()
+            
+            if authorized_owner:
+                ar = (authorized_owner.owner_name_ar or "").strip()
+                en = (authorized_owner.owner_name_en or "").strip()
+                main_name = ar or en
+            else:
+                # ✅ إذا لم يكن هناك مالك مفوض محدد، نستخدم الأول (للتوافق مع البيانات القديمة)
+                for o in qs.order_by("id"):
+                    ar = (o.owner_name_ar or "").strip()
+                    en = (o.owner_name_en or "").strip()
+                    if ar or en:
+                        main_name = ar or en
+                        break
 
         if main_name:
             return f"{main_name} وشركاؤه" if owners_count > 1 else main_name
@@ -279,7 +324,60 @@ class SitePlanOwnerSerializer(serializers.ModelSerializer):
             "nationality", "phone", "email",
             "id_number", "id_issue_date", "id_expiry_date", "id_attachment",
             "right_hold_type", "share_possession", "share_percent",
+            "age",  # ✅ العمر المحسوب تلقائياً
+            "is_authorized",  # ✅ المالك المفوض
         ]
+        read_only_fields = ["age"]  # ✅ العمر محسوب تلقائياً ولا يمكن تعديله مباشرة
+
+    def to_representation(self, instance):
+        """معالجة آمنة للبيانات مع التعامل مع الحقول المفقودة"""
+        try:
+            data = super().to_representation(instance)
+            
+            # ✅ التأكد من وجود الحقول الجديدة مع قيم افتراضية
+            if "age" not in data:
+                data["age"] = instance.age if hasattr(instance, 'age') else None
+            if "is_authorized" not in data:
+                data["is_authorized"] = instance.is_authorized if hasattr(instance, 'is_authorized') else False
+            
+            # ✅ معالجة آمنة لـ id_attachment
+            if "id_attachment" in data and data["id_attachment"]:
+                try:
+                    # التحقق من أن الملف موجود فعلياً
+                    if hasattr(instance, 'id_attachment') and instance.id_attachment:
+                        # استخدام URL الملف إذا كان موجوداً
+                        data["id_attachment"] = instance.id_attachment.url if hasattr(instance.id_attachment, 'url') else str(instance.id_attachment)
+                    else:
+                        data["id_attachment"] = None
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Error accessing id_attachment for owner {instance.id}: {e}")
+                    data["id_attachment"] = None
+            
+            return data
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in SitePlanOwnerSerializer.to_representation for owner {instance.id}: {e}", exc_info=True)
+            # ✅ إرجاع بيانات أساسية في حالة الخطأ
+            return {
+                "id": instance.id if hasattr(instance, 'id') else None,
+                "owner_name_ar": getattr(instance, 'owner_name_ar', ''),
+                "owner_name_en": getattr(instance, 'owner_name_en', ''),
+                "nationality": getattr(instance, 'nationality', ''),
+                "phone": getattr(instance, 'phone', ''),
+                "email": getattr(instance, 'email', ''),
+                "id_number": getattr(instance, 'id_number', ''),
+                "id_issue_date": instance.id_issue_date.isoformat() if hasattr(instance, 'id_issue_date') and instance.id_issue_date else None,
+                "id_expiry_date": instance.id_expiry_date.isoformat() if hasattr(instance, 'id_expiry_date') and instance.id_expiry_date else None,
+                "id_attachment": None,
+                "right_hold_type": getattr(instance, 'right_hold_type', 'Ownership'),
+                "share_possession": getattr(instance, 'share_possession', ''),
+                "share_percent": str(getattr(instance, 'share_percent', '100')),
+                "age": getattr(instance, 'age', None) if hasattr(instance, 'age') else None,
+                "is_authorized": getattr(instance, 'is_authorized', False) if hasattr(instance, 'is_authorized') else False,
+            }
 
 
 class SitePlanSerializer(serializers.ModelSerializer):
@@ -318,6 +416,8 @@ class SitePlanSerializer(serializers.ModelSerializer):
         "nationality", "phone", "email",
         "id_number", "id_issue_date", "id_expiry_date", "id_attachment",
         "right_hold_type", "share_possession", "share_percent",
+        "age",  # ✅ العمر المحسوب تلقائياً
+        "is_authorized",  # ✅ المالك المفوض
     }
     _owners_key_re = re.compile(r"^owners\[(\d+)\]\[(\w+)\]$")
 
@@ -334,6 +434,15 @@ class SitePlanSerializer(serializers.ModelSerializer):
             ar = en
 
         c = {k: o.get(k) for k in SitePlanSerializer._owner_allowed if k in o}
+        
+        # ✅ تحويل is_authorized إلى boolean
+        if "is_authorized" in c:
+            is_auth = c["is_authorized"]
+            if isinstance(is_auth, str):
+                c["is_authorized"] = is_auth.lower() in ("true", "1", "yes")
+            elif not isinstance(is_auth, bool):
+                c["is_authorized"] = bool(is_auth)
+        
         # ✅ الحفاظ على id إذا كان موجوداً (للملاك الموجودين)
         if "id" in o:
             c["id"] = o["id"]
@@ -353,6 +462,68 @@ class SitePlanSerializer(serializers.ModelSerializer):
     @staticmethod
     def _has_name(o: dict) -> bool:
         return bool((o.get("owner_name_ar") or "").strip() or (o.get("owner_name_en") or "").strip())
+
+    def to_representation(self, instance):
+        """معالجة آمنة لقراءة SitePlan مع التعامل مع الأخطاء"""
+        try:
+            data = super().to_representation(instance)
+            
+            # ✅ معالجة آمنة لـ application_file
+            if "application_file" in data and data["application_file"]:
+                try:
+                    if hasattr(instance, 'application_file') and instance.application_file:
+                        # التحقق من أن الملف موجود فعلياً
+                        if hasattr(instance.application_file, 'url'):
+                            data["application_file"] = instance.application_file.url
+                        else:
+                            data["application_file"] = str(instance.application_file) if instance.application_file else None
+                    else:
+                        data["application_file"] = None
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Error accessing application_file for SitePlan {instance.id}: {e}")
+                    data["application_file"] = None
+            
+            # ✅ معالجة آمنة للملاك
+            if "owners" in data and isinstance(data["owners"], list):
+                # البيانات تم معالجتها بالفعل في SitePlanOwnerSerializer.to_representation
+                pass
+            
+            return data
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in SitePlanSerializer.to_representation for SitePlan {instance.id}: {e}", exc_info=True)
+            # ✅ إرجاع بيانات أساسية في حالة الخطأ
+            try:
+                return {
+                    "id": instance.id if hasattr(instance, 'id') else None,
+                    "project": instance.project_id if hasattr(instance, 'project_id') else None,
+                    "municipality": getattr(instance, 'municipality', ''),
+                    "zone": getattr(instance, 'zone', ''),
+                    "sector": getattr(instance, 'sector', ''),
+                    "plot_area_sqm": str(getattr(instance, 'plot_area_sqm', '')) if hasattr(instance, 'plot_area_sqm') else '',
+                    "plot_area_sqft": str(getattr(instance, 'plot_area_sqft', '')) if hasattr(instance, 'plot_area_sqft') else '',
+                    "land_no": getattr(instance, 'land_no', ''),
+                    "allocation_type": getattr(instance, 'allocation_type', ''),
+                    "land_use": getattr(instance, 'land_use', ''),
+                    "application_number": getattr(instance, 'application_number', ''),
+                    "application_date": instance.application_date.isoformat() if hasattr(instance, 'application_date') and instance.application_date else None,
+                    "application_file": None,
+                    "owners": [],  # ✅ قائمة فارغة بدلاً من خطأ
+                    "created_at": instance.created_at.isoformat() if hasattr(instance, 'created_at') and instance.created_at else None,
+                    "updated_at": instance.updated_at.isoformat() if hasattr(instance, 'updated_at') and instance.updated_at else None,
+                }
+            except Exception as inner_e:
+                logger.error(f"Error creating fallback representation: {inner_e}", exc_info=True)
+                # ✅ إرجاع بيانات فارغة كملاذ أخير
+                return {
+                    "id": None,
+                    "project": None,
+                    "owners": [],
+                    "application_file": None,
+                }
 
     def _extract_owners_from_request(self):
         """استخراج بيانات الملاك من الطلب (يدعم JSON و multipart)"""
@@ -582,18 +753,29 @@ class SitePlanSerializer(serializers.ModelSerializer):
         return attrs
 
     def _update_project_name_from_owners(self, siteplan: SitePlan):
-        """تحديث اسم المشروع بناءً على الملاك"""
+        """تحديث اسم المشروع بناءً على المالك المفوض"""
         # ✅ إعادة تحميل الملاك من قاعدة البيانات للتأكد من أحدث البيانات
         siteplan.refresh_from_db()
-        qs = siteplan.owners.order_by("id")
+        qs = siteplan.owners.all()
         owners_count = qs.count()
-        main = ""
-        for o in qs:
-            ar = (o.owner_name_ar or "").strip()
-            en = (o.owner_name_en or "").strip()
-            if ar or en:
-                main = ar or en
-                break
+        
+        # ✅ البحث عن المالك المفوض أولاً
+        authorized_owner = qs.filter(is_authorized=True).first()
+        
+        if authorized_owner:
+            ar = (authorized_owner.owner_name_ar or "").strip()
+            en = (authorized_owner.owner_name_en or "").strip()
+            main = ar or en
+        else:
+            # ✅ إذا لم يكن هناك مالك مفوض محدد، نستخدم الأول (للتوافق مع البيانات القديمة)
+            main = ""
+            for o in qs.order_by("id"):
+                ar = (o.owner_name_ar or "").strip()
+                en = (o.owner_name_en or "").strip()
+                if ar or en:
+                    main = ar or en
+                    break
+        
         if main:
             new_name = f"{main} وشركاؤه" if owners_count > 1 else main
             # ✅ تحديث اسم المشروع فقط إذا كان مختلفاً
@@ -627,6 +809,8 @@ class SitePlanSerializer(serializers.ModelSerializer):
                         "right_hold_type": o.right_hold_type,
                         "share_possession": o.share_possession,
                         "share_percent": str(o.share_percent) if o.share_percent is not None else "100.00",
+                        "age": o.age,  # ✅ العمر المحسوب تلقائياً
+                        "is_authorized": o.is_authorized,  # ✅ المالك المفوض
                     })
                 
                 license_obj.owners = owners_list
@@ -1077,6 +1261,13 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
                         elif not isinstance(share_percent, Decimal):
                             share_percent = Decimal(str(share_percent))
                         
+                        # ✅ تحويل is_authorized إلى boolean
+                        is_authorized = owner_data.get("is_authorized", False)
+                        if isinstance(is_authorized, str):
+                            is_authorized = is_authorized.lower() in ("true", "1", "yes")
+                        elif not isinstance(is_authorized, bool):
+                            is_authorized = bool(is_authorized)
+                        
                         # ✅ إنشاء المالك في Site Plan
                         SitePlanOwner.objects.create(
                             siteplan=siteplan,
@@ -1091,6 +1282,7 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
                             right_hold_type=owner_data.get("right_hold_type", "Ownership"),
                             share_possession=owner_data.get("share_possession", ""),
                             share_percent=share_percent,
+                            is_authorized=is_authorized,  # ✅ المالك المفوض
                         )
                     
                     # ✅ تحديث اسم المشروع بعد استعادة الملاك
@@ -1370,15 +1562,23 @@ class ContractSerializer(serializers.ModelSerializer):
                     files_data = req.FILES
                 
                 if files_data:
+                    logger.info(f"🔍 Found {len(files_data)} files in FormData")
                     for key in files_data.keys():
+                        logger.info(f"🔍 FormData key: {key}")
                         # ✅ البحث عن attachments[0][file], attachments[1][file], إلخ
                         match = re.match(r"^attachments\[(\d+)\]\[file\]$", str(key))
                         if match:
                             idx = int(match.group(1))
                             if idx < len(attachments_parsed):
-                                attachments_parsed[idx]["_file"] = files_data.get(key)
+                                file_obj = files_data.get(key)
+                                attachments_parsed[idx]["_file"] = file_obj
+                                logger.info(f"✅ Linked file to attachments_parsed[{idx}]: {file_obj.name if file_obj else 'None'}")
+                            else:
+                                logger.warning(f"⚠️ Attachment index {idx} out of range (len={len(attachments_parsed)})")
+                        else:
+                            logger.debug(f"🔍 Key '{key}' doesn't match attachments pattern")
             except Exception as e:
-                logger.warning(f"Error extracting attachment files: {e}")
+                logger.warning(f"Error extracting attachment files: {e}", exc_info=True)
         
         ret["attachments"] = attachments_parsed if isinstance(attachments_parsed, list) else []
         
@@ -1578,8 +1778,35 @@ class ContractSerializer(serializers.ModelSerializer):
             
             # ✅ حفظ المرفقات
             if attachments_data and isinstance(attachments_data, list):
+                # ✅ استخراج ملفات attachments من FormData (نفس منطق to_internal_value و update)
+                req = self.context.get("request")
+                files_data = None
+                if req:
+                    try:
+                        if hasattr(req, '_request') and hasattr(req._request, 'FILES'):
+                            files_data = req._request.FILES
+                        elif hasattr(req, 'FILES'):
+                            files_data = req.FILES
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Error extracting attachment files in create: {e}")
+                
+                # ✅ ربط الملفات بالمرفقات
+                if files_data:
+                    for key in files_data.keys():
+                        # ✅ البحث عن attachments[0][file], attachments[1][file], إلخ
+                        match = re.match(r"^attachments\[(\d+)\]\[file\]$", str(key))
+                        if match:
+                            idx = int(match.group(1))
+                            if idx < len(attachments_data):
+                                attachments_data[idx]["_file"] = files_data.get(key)
+                                import logging
+                                logger = logging.getLogger(__name__)
+                                logger.info(f"✅ Linked file to attachment[{idx}]: {files_data.get(key).name if files_data.get(key) else 'None'}")
+                
                 saved_attachments = []
-                for att in attachments_data:
+                for idx, att in enumerate(attachments_data):
                     att_dict = {
                         "type": att.get("type", "main_contract"),
                         "date": att.get("date"),
@@ -1594,6 +1821,17 @@ class ContractSerializer(serializers.ModelSerializer):
                         file_path = default_storage.save(f"contracts/attachments/{obj.id}/{file_obj.name}", file_obj)
                         att_dict["file_url"] = default_storage.url(file_path)
                         att_dict["file_name"] = file_obj.name
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"✅ Saved attachment[{idx}] file: {file_obj.name} -> {att_dict['file_url']}")
+                    # ✅ إذا كان هناك file_url موجود (من attachment قديم)
+                    elif att.get("file_url"):
+                        att_dict["file_url"] = att.get("file_url")
+                        att_dict["file_name"] = att.get("file_name")
+                    else:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"⚠️ Attachment[{idx}] has no file: type={att.get('type')}, _file={'_file' in att}, file_url={att.get('file_url')}")
                     saved_attachments.append(att_dict)
                 obj.attachments = saved_attachments
                 obj.save(update_fields=["attachments"])
@@ -1687,8 +1925,46 @@ class ContractSerializer(serializers.ModelSerializer):
             
             # ✅ تحديث المرفقات إذا كانت موجودة
             if attachments_data is not None and isinstance(attachments_data, list):
+                # ✅ استخراج ملفات attachments من FormData (نفس منطق to_internal_value)
+                req = self.context.get("request")
+                files_data = None
+                if req:
+                    try:
+                        if hasattr(req, '_request') and hasattr(req._request, 'FILES'):
+                            files_data = req._request.FILES
+                        elif hasattr(req, 'FILES'):
+                            files_data = req.FILES
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Error extracting attachment files in update: {e}")
+                
+                # ✅ ربط الملفات بالمرفقات
+                if files_data:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"🔍 Found {len(files_data)} files in FormData (update)")
+                    for key in files_data.keys():
+                        logger.info(f"🔍 FormData key (update): {key}")
+                        # ✅ البحث عن attachments[0][file], attachments[1][file], إلخ
+                        match = re.match(r"^attachments\[(\d+)\]\[file\]$", str(key))
+                        if match:
+                            idx = int(match.group(1))
+                            if idx < len(attachments_data):
+                                file_obj = files_data.get(key)
+                                attachments_data[idx]["_file"] = file_obj
+                                logger.info(f"✅ Linked file to attachments_data[{idx}] (update): {file_obj.name if file_obj else 'None'}")
+                            else:
+                                logger.warning(f"⚠️ Attachment index {idx} out of range (len={len(attachments_data)})")
+                        else:
+                            logger.debug(f"🔍 Key '{key}' doesn't match attachments pattern (update)")
+                
                 saved_attachments = []
-                for att in attachments_data:
+                for idx, att in enumerate(attachments_data):
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"🔍 Processing attachment[{idx}] (update): type={att.get('type')}, has_file={'_file' in att}, file_url={att.get('file_url')}")
+                    
                     att_dict = {
                         "type": att.get("type", "main_contract"),
                         "date": att.get("date"),
@@ -1700,9 +1976,28 @@ class ContractSerializer(serializers.ModelSerializer):
                     if "_file" in att and att["_file"]:
                         from django.core.files.storage import default_storage
                         file_obj = att["_file"]
+                        # ✅ حذف الملف القديم إذا كان موجوداً
+                        old_att = None
+                        if updated.attachments and isinstance(updated.attachments, list) and len(updated.attachments) > len(saved_attachments):
+                            old_att = updated.attachments[len(saved_attachments)]
+                            if old_att and old_att.get("file_url"):
+                                try:
+                                    old_path = old_att["file_url"].replace(default_storage.url(""), "")
+                                    if default_storage.exists(old_path):
+                                        default_storage.delete(old_path)
+                                except:
+                                    pass
                         file_path = default_storage.save(f"contracts/attachments/{instance.id}/{file_obj.name}", file_obj)
                         att_dict["file_url"] = default_storage.url(file_path)
                         att_dict["file_name"] = file_obj.name
+                        logger.info(f"✅ Saved attachment[{idx}] file (update): {file_obj.name} -> {att_dict['file_url']}")
+                    # ✅ إذا كان هناك file_url موجود (من attachment قديم) ولم يكن هناك ملف جديد
+                    elif att.get("file_url"):
+                        att_dict["file_url"] = att.get("file_url")
+                        att_dict["file_name"] = att.get("file_name")
+                        logger.info(f"✅ Preserved attachment[{idx}] existing file (update): {att_dict['file_url']}")
+                    else:
+                        logger.warning(f"⚠️ Attachment[{idx}] has no file (update): type={att.get('type')}, _file={'_file' in att}, file_url={att.get('file_url')}")
                     saved_attachments.append(att_dict)
                 updated.attachments = saved_attachments
                 updated.save(update_fields=["attachments"])

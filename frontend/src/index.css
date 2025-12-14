@@ -467,6 +467,8 @@ textarea.input,
   color: var(--color-text-tertiary);
 }
 
+/* تم إزالة CSS القديم لحقول التاريخ - الآن يتم التعامل معها في DateInput.css */
+
 .input:focus, 
 .form-input:focus,
 select.input:focus, 

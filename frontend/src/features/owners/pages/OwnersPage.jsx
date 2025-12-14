@@ -5,6 +5,7 @@ import { api } from "../../../services/api";
 import PageLayout from "../../../components/layout/PageLayout";
 import Button from "../../../components/common/Button";
 import Dialog from "../../../components/common/Dialog";
+import { calculateAgeFromEmiratesId } from "../../../utils/inputFormatters";
 
 export default function OwnersPage() {
   const { t, i18n } = useTranslation();
@@ -83,6 +84,7 @@ export default function OwnersPage() {
                       right_hold_type: owner?.right_hold_type || "",
                       share_possession: owner?.share_possession || "",
                       share_percent: owner?.share_percent || "",
+                      age: owner?.age || null,  // ✅ العمر من الـ backend (إن وجد)
                     },
                   });
                 }
@@ -213,6 +215,7 @@ export default function OwnersPage() {
     });
   };
 
+
   return (
     <PageLayout loading={loading} loadingText={t("loading")}>
       <div className="list-page">
@@ -279,7 +282,9 @@ export default function OwnersPage() {
                   </th>
                   <th>#</th>
                   <th>{t("owner_name")}</th>
+                  <th>{t("owner_name_en") || "Owner Name (EN)"}</th>
                   <th>{t("nationality")}</th>
+                  <th>{t("age")}</th>
                   <th>{t("id_number")}</th>
                   <th>{t("projects_count")}</th>
                   <th style={{ minWidth: "200px" }}>{t("action")}</th>
@@ -288,6 +293,8 @@ export default function OwnersPage() {
               <tbody>
                 {filteredOwners.map((owner, idx) => {
                   const checked = selectedKeys.has(owner.__key);
+                  // ✅ استخدام العمر من الـ backend إن وجد، وإلا نحسبه من رقم الهوية
+                  const age = owner.fullData?.age ?? calculateAgeFromEmiratesId(owner.fullData?.id_number);
                   return (
                     <tr key={owner.__key}>
                       <td className="text-center">
@@ -307,7 +314,25 @@ export default function OwnersPage() {
                           </div>
                         )}
                       </td>
-                      <td>{owner.fullData?.nationality || t("empty_value")}</td>
+                      <td>
+                        {owner.nameEn ? (
+                          <span style={{ direction: "ltr", textAlign: "left", display: "inline-block" }}>
+                            {owner.nameEn}
+                          </span>
+                        ) : (
+                          <span className="prj-muted">—</span>
+                        )}
+                      </td>
+                      <td>{owner.fullData?.nationality || <span className="prj-muted">—</span>}</td>
+                      <td>
+                        {age !== null ? (
+                          <span className="prj-badge">
+                            {age} {isAR ? t("year") : t("years")}
+                          </span>
+                        ) : (
+                          <span className="prj-muted">—</span>
+                        )}
+                      </td>
                       <td>
                         <code className="prj-code">{owner.fullData?.id_number || t("empty_value")}</code>
                       </td>
@@ -346,7 +371,7 @@ export default function OwnersPage() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={7} className="prj-foot prj-muted">
+                  <td colSpan={9} className="prj-foot prj-muted">
                     {t("total")}: {filteredOwners.length} / {owners.length} {t("owners")}
                   </td>
                 </tr>

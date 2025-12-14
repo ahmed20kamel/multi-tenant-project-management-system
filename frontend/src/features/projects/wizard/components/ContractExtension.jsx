@@ -4,6 +4,7 @@ import Field from "../../../../components/forms/Field";
 import ViewRow from "../../../../components/forms/ViewRow";
 import FileUpload from "../../../../components/file-upload/FileUpload";
 import FileAttachmentView from "../../../../components/file-upload/FileAttachmentView";
+import DateInput from "../../../../components/fields/DateInput";
 import Button from "../../../../components/common/Button";
 import NumberField from "../../../../components/forms/NumberField";
 import { extractFileNameFromUrl } from "../../../../utils/fileHelpers";
@@ -18,7 +19,7 @@ export default function ContractExtension({
   canRemove,
   projectId,
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   // ✅ استخدام extensionIndex الفعلي، إذا لم يكن موجوداً نستخدم index
   const actualIndex = extensionIndex !== undefined ? extensionIndex : index;
@@ -47,7 +48,7 @@ export default function ContractExtension({
           
           {/* تاريخ التمديد ورقم الاعتماد */}
           <div className="form-grid cols-2" style={{ gap: "16px" }}>
-            <ViewRow label="تاريخ التمديد" value={extension.extension_date || ""} />
+            <ViewRow label="تاريخ التمديد" value={extension.extension_date ? formatDate(extension.extension_date, i18n.language) : ""} />
             <ViewRow label="رقم الاعتماد" value={extension.approval_number || ""} />
           </div>
           
@@ -116,12 +117,10 @@ export default function ContractExtension({
         {/* تاريخ التمديد ورقم الاعتماد */}
         <div className="form-grid cols-2" style={{ gap: "16px" }}>
           <Field label="تاريخ التمديد">
-            <input
+            <DateInput
               className="input"
-              type="date"
               value={extension.extension_date || ""}
-              onChange={(e) => onUpdate(actualIndex, "extension_date", e.target.value)}
-              dir="rtl"
+              onChange={(value) => onUpdate(actualIndex, "extension_date", value)}
             />
           </Field>
           <Field label="رقم الاعتماد">

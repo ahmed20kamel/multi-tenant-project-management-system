@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { FaEye, FaDownload } from "react-icons/fa";
 import Button from "../common/Button";
-import { api } from "../../services/api";
+import { buildFileUrl } from "../../utils/fileHelpers";
 
 export default function FileAttachmentView({ fileUrl, fileName, projectId, endpoint }) {
   const { t } = useTranslation();
@@ -36,72 +36,169 @@ export default function FileAttachmentView({ fileUrl, fileName, projectId, endpo
 
   const displayName = getDisplayName();
 
-  const handleView = () => {
-    if (!fileUrl) return;
-    
-    // بناء URL كامل للملف
-    let fullUrl = fileUrl;
-    if (!fileUrl.startsWith("http")) {
-      // ✅ إذا كان URL نسبي يبدأ بـ /media/، نستخدمه مباشرة
-      // ملفات الـ media موجودة في /media/ وليس /api/media/
-      if (fileUrl.startsWith("/media/")) {
-        // في development، قد نحتاج لإضافة base URL
-        const isDev = import.meta.env.DEV;
-        const ROOT = isDev ? "" : (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
-        fullUrl = `${ROOT}${fileUrl}`;
-      } else if (fileUrl.startsWith("/")) {
-        // URLs أخرى نسبية
-        const baseURL = api.defaults.baseURL || "";
-        fullUrl = baseURL.endsWith("/") && fileUrl.startsWith("/")
-          ? `${baseURL.slice(0, -1)}${fileUrl}`
-          : `${baseURL}${fileUrl}`;
-      } else {
-        // URL نسبي بدون /
-        const baseURL = api.defaults.baseURL || "";
-        fullUrl = `${baseURL}${fileUrl}`;
-      }
+  const handleView = async (e) => {
+    // ✅ منع أي سلوك افتراضي أو propagation
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
     }
     
-    // فتح الملف في نافذة جديدة
-    window.open(fullUrl, "_blank", "noopener,noreferrer");
+    if (!fileUrl) return;
+    
+    try {
+      // ✅ استخدام buildFileUrl للحصول على API endpoint محمي
+      const apiUrl = buildFileUrl(fileUrl);
+      if (!apiUrl) {
+        console.error('لا يمكن بناء URL للملف:', fileUrl);
+        return;
+      }
+
+      // ✅ تحميل الملف من API endpoint محمي مع JWT token
+      const isDev = import.meta.env.DEV;
+      const apiBase = isDev ? "/api" : (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+      const fullApiUrl = apiUrl.startsWith("http") ? apiUrl : `${window.location.origin}${apiUrl}`;
+      
+      // ✅ الحصول على JWT token من localStorage
+      const token = localStorage.getItem('access_token');
+      const headers = {
+        'Accept': '*/*',
+      };
+      
+      // ✅ إضافة JWT token إذا كان موجوداً
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(fullApiUrl, {
+        method: 'GET',
+        credentials: 'include', // ✅ إرسال cookies مع الطلب
+        headers: headers
+      });
+
+      if (!response.ok) {
+        // ✅ إذا كان 401، محاولة refresh token
+        if (response.status === 401) {
+          const refreshToken = localStorage.getItem('refresh_token');
+          if (refreshToken) {
+            try {
+              const { api } = await import("../../services/api");
+              const refreshResponse = await api.post('auth/token/refresh/', {
+                refresh: refreshToken,
+              });
+              const { access } = refreshResponse.data;
+              localStorage.setItem('access_token', access);
+              
+              // ✅ إعادة المحاولة مع token جديد
+              headers['Authorization'] = `Bearer ${access}`;
+              const retryResponse = await fetch(fullApiUrl, {
+                method: 'GET',
+                credentials: 'include',
+                headers: headers
+              });
+              
+              if (!retryResponse.ok) {
+                throw new Error(`Failed to fetch file: ${retryResponse.status} ${retryResponse.statusText}`);
+              }
+              
+              // ✅ استخدام دالة محسّنة لفتح الملف مع عنوان واضح
+              const { openFileInNewWindow } = await import("../../utils/fileHelpers");
+              await openFileInNewWindow(fileUrl, displayName, {});
+              return;
+            } catch (refreshError) {
+              console.error("Token refresh failed:", refreshError);
+              throw new Error("Authentication failed. Please login again.");
+            }
+          }
+        }
+        
+        throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      
+      // ✅ استخدام دالة محسّنة لفتح الملف مع عنوان واضح
+      const { openFileInNewWindow } = await import("../../utils/fileHelpers");
+      await openFileInNewWindow(fileUrl, displayName, {});
+    } catch (error) {
+      console.error('خطأ في فتح الملف:', error);
+      // ✅ Fallback: محاولة فتح الملف مباشرة (للملفات العامة)
+      try {
+        const fullUrl = buildFileUrl(fileUrl);
+        if (fullUrl) {
+          const link = document.createElement('a');
+          link.href = fullUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      } catch (fallbackError) {
+        console.error('خطأ في fallback:', fallbackError);
+      }
+    }
   };
 
-  const handleDownload = async () => {
+  const handleDownload = async (e) => {
+    // ✅ منع أي سلوك افتراضي أو propagation
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
     if (!fileUrl) return;
 
     try {
-      // ✅ بناء URL للتحميل - نفس منطق handleView
-      let downloadUrl = fileUrl;
-      if (!fileUrl.startsWith("http")) {
-        // ✅ إذا كان URL نسبي يبدأ بـ /media/، نستخدمه مباشرة
-        if (fileUrl.startsWith("/media/")) {
-          const isDev = import.meta.env.DEV;
-          const ROOT = isDev ? "" : (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
-          downloadUrl = `${ROOT}${fileUrl}`;
-        } else if (fileUrl.startsWith("/")) {
-          const baseURL = api.defaults.baseURL || "";
-          downloadUrl = baseURL.endsWith("/") && fileUrl.startsWith("/")
-            ? `${baseURL.slice(0, -1)}${fileUrl}`
-            : `${baseURL}${fileUrl}`;
-        } else {
-          const baseURL = api.defaults.baseURL || "";
-          downloadUrl = `${baseURL}${fileUrl}`;
-        }
+      // ✅ استخدام buildFileUrl للحصول على API endpoint محمي
+      const apiUrl = buildFileUrl(fileUrl);
+      if (!apiUrl) {
+        console.warn("Could not build download URL");
+        return;
       }
 
-      // إنشاء رابط تحميل
+      // ✅ تحميل الملف من API endpoint محمي مع JWT token
+      const isDev = import.meta.env.DEV;
+      const apiBase = isDev ? "/api" : (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+      const fullApiUrl = apiUrl.startsWith("http") ? apiUrl : `${window.location.origin}${apiUrl}`;
+      
+      const token = localStorage.getItem('access_token');
+      const headers = {
+        'Accept': '*/*',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(fullApiUrl, {
+        method: 'GET',
+        credentials: 'include', // ✅ إرسال cookies مع الطلب
+        headers: headers
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      // ✅ إنشاء رابط تحميل
       const link = document.createElement("a");
-      link.href = downloadUrl;
+      link.href = blobUrl;
       link.download = displayName;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      // ✅ تنظيف blob URL بعد التحميل
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
     } catch (error) {
       console.error("Download error:", error);
       // Fallback: فتح في نافذة جديدة
-      handleView();
+      handleView(e);
     }
   };
 
@@ -130,7 +227,7 @@ export default function FileAttachmentView({ fileUrl, fileName, projectId, endpo
       <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
         <Button
           variant="secondary"
-          onClick={handleView}
+          onClick={(e) => handleView(e)}
           disabled={!fileUrl}
           style={{ minWidth: "auto", padding: "8px 12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
           title={t("view_file")}
@@ -140,7 +237,7 @@ export default function FileAttachmentView({ fileUrl, fileName, projectId, endpo
         </Button>
         <Button
           variant="primary"
-          onClick={handleDownload}
+          onClick={(e) => handleDownload(e)}
           disabled={!fileUrl}
           style={{ minWidth: "auto", padding: "8px 12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
           title={t("download_file")}

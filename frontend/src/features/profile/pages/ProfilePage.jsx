@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import Field from '../../../components/forms/Field';
 import Button from '../../../components/common/Button';
 import Card from '../../../components/common/Card';
+import DateInput from '../../../components/fields/DateInput';
 import { FaCamera, FaTrash, FaSave, FaUser } from 'react-icons/fa';
 
 export default function ProfilePage() {
@@ -342,12 +343,10 @@ export default function ProfilePage() {
                 />
               </Field>
               <Field label={isRTL ? 'تاريخ الميلاد' : 'Date of Birth'}>
-                <input
-                  type="date"
-                  name="date_of_birth"
+                <DateInput
                   className="input"
                   value={formData.date_of_birth}
-                  onChange={handleInputChange}
+                  onChange={(value) => setFormData({ ...formData, date_of_birth: value })}
                 />
               </Field>
               <Field label={isRTL ? 'فصيلة الدم' : 'Blood Type'}>

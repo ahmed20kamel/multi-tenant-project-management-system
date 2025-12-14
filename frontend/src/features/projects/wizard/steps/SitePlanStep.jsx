@@ -21,7 +21,8 @@ import { extractFileNameFromUrl } from "../../../../utils/fileHelpers";
 import { toLocalizedUse } from "../../../../utils/licenseHelpers";
 import { formatDate } from "../../../../utils/formatters";
 import InfoTip from "../components/InfoTip";
-import { renameFileForUpload } from "../../../../utils/fileNaming";
+import DateInput from "../../../../components/fields/DateInput";
+import { renameFileForUpload, getStandardFileName } from "../../../../utils/fileNaming";
 
 export default function SitePlanStep({ 
   projectId, 
@@ -83,6 +84,7 @@ export default function SitePlanStep({
   const [uploadedApplicationFileUrl, setUploadedApplicationFileUrl] = useState(null); // URL للملف المرفوع في الخلفية
   const [uploadProgress, setUploadProgress] = useState(0); // تتبع التقدم أثناء الرفع
   const [isUploading, setIsUploading] = useState(false); // حالة الرفع
+  const [contractOwners, setContractOwners] = useState([]); // ✅ بيانات الملاك من العقد
 
   console.log("OwnerFileUrls:", ownerFileUrls);
   console.log("OwnerFileNames:", ownerFileNames);
@@ -202,6 +204,61 @@ export default function SitePlanStep({
     };
   }, [projectId]);
 
+  // ✅ تحميل بيانات الملاك من العقد
+  useEffect(() => {
+    if (!projectId || !viewMode) return; // ✅ فقط في وضع العرض
+    
+    (async () => {
+      try {
+        const { data } = await api.get(`projects/${projectId}/contract/`);
+        if (Array.isArray(data) && data.length > 0) {
+          const contractData = data[0];
+          if (contractData.owners && Array.isArray(contractData.owners) && contractData.owners.length > 0) {
+            setContractOwners(contractData.owners);
+            if (process.env.NODE_ENV === "development") {
+              console.log("✅ Loaded contract owners:", contractData.owners);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Error loading contract owners:", e);
+      }
+    })();
+  }, [projectId, viewMode]);
+
+  // ✅ دالة لتحديد المالك المفوض
+  const handleAuthorizedChange = (index) => {
+    setOwners((prev) => {
+      return prev.map((owner, idx) => ({
+        ...owner,
+        is_authorized: idx === index, // ✅ فقط المالك المحدد يكون مفوض
+      }));
+    });
+  };
+
+  // ✅ دالة لمطابقة الملاك من المخطط مع الملاك من العقد
+  const getContractOwnerData = (sitePlanOwner) => {
+    if (!contractOwners || contractOwners.length === 0) return null;
+    
+    // ✅ محاولة المطابقة بناءً على id_number أولاً
+    if (sitePlanOwner.id_number) {
+      const matched = contractOwners.find(
+        co => co.id_number && co.id_number.trim() === sitePlanOwner.id_number.trim()
+      );
+      if (matched) return matched;
+    }
+    
+    // ✅ إذا لم تكن هناك مطابقة، نبحث بناءً على owner_name_ar
+    if (sitePlanOwner.owner_name_ar) {
+      const matched = contractOwners.find(
+        co => co.owner_name_ar && co.owner_name_ar.trim() === sitePlanOwner.owner_name_ar.trim()
+      );
+      if (matched) return matched;
+    }
+    
+    return null;
+  };
+
   // ----- Sync owner file URLs when owners change -----
   useEffect(() => {
     if (!owners || owners.length === 0) {
@@ -281,6 +338,15 @@ export default function SitePlanStep({
     }
 
     // ------------------------------
+    // 🔴 Check: Authorized owner selected
+    // ------------------------------
+    const authorizedOwner = owners.find((o) => o.is_authorized === true);
+    if (!authorizedOwner) {
+      console.error("No authorized owner selected");
+      throw new Error(t("errors.authorized_owner_required") || "يجب تحديد المالك المفوض");
+    }
+
+    // ------------------------------
     // 🔴 Check: owner bilingual name
     // ------------------------------
     owners.forEach((o, idx) => {
@@ -330,7 +396,8 @@ export default function SitePlanStep({
 
       fd.append(`owners[${idx}][owner_name_ar]`, nameAr);
       fd.append(`owners[${idx}][owner_name_en]`, nameEn);
-      fd.append(`owners[${idx}][owner_name]`, nameAr); 
+      fd.append(`owners[${idx}][owner_name]`, nameAr);
+      fd.append(`owners[${idx}][is_authorized]`, o.is_authorized ? "true" : "false"); // ✅ المالك المفوض
 
       fd.append(`owners[${idx}][id_number]`, o.id_number || "");
       fd.append(`owners[${idx}][nationality]`, o.nationality || "");
@@ -520,6 +587,7 @@ export default function SitePlanStep({
               id_issue_date: toInputDateUnified(o.id_issue_date),
               id_expiry_date: toInputDateUnified(o.id_expiry_date),
               share_percent: arr.length === 1 ? "100" : String(o.share_percent ?? 0),
+              is_authorized: o.is_authorized || (idx === 0 && !o.hasOwnProperty('is_authorized')), // ✅ الحفاظ على is_authorized أو استخدام الأول كافتراضي
               // ✅ الحفاظ على id_attachment كـ URL string (ليس File object)
               // هذا مهم جداً - بعد الحفظ، الملف موجود في السيرفر كـ URL
               id_attachment:
@@ -768,11 +836,11 @@ export default function SitePlanStep({
               <InfoTip align="start" text={t("allocation_date_note")} />
             </div>
           }>
-            <input
+            <DateInput
               className="input"
-              type="date"
-              value={form.allocation_date || ""}
-              onChange={(e) => setF("allocation_date", e.target.value)}
+              value={form.allocation_date}
+              onChange={(value) => setF("allocation_date", value)}
+              placeholder="dd / mm / yyyy"
             />
           </Field>
         </div>
@@ -841,16 +909,25 @@ export default function SitePlanStep({
             owners.map((o, i) => {
               const fileUrl = ownerFileUrls[i] || (typeof o.id_attachment === "string" && o.id_attachment.trim() !== "" ? o.id_attachment : "");
               const fileName = ownerFileNames[i] || (o.id_attachment instanceof File ? o.id_attachment.name : "") || (fileUrl ? extractFileNameFromUrl(fileUrl) : "");
+              // ✅ الحصول على بيانات المالك من العقد
+              const contractOwner = getContractOwnerData(o);
+              // ✅ استخدام phone و email من العقد إذا كانت موجودة، وإلا من المخطط
+              const ownerWithContractData = {
+                ...o,
+                phone: contractOwner?.phone || o.phone || "",
+                email: contractOwner?.email || o.email || "",
+              };
               return (
                 <OwnerForm
                   key={i}
-                  owner={o}
+                  owner={ownerWithContractData}
                   index={i}
                   isView={true}
                   isAR={isAR}
                   idAttachmentUrl={fileUrl}
                   projectId={projectId}
                   idAttachmentFileName={fileName}
+                  isAuthorized={ownerWithContractData.is_authorized || false}
                 />
               );
             })
@@ -880,6 +957,8 @@ export default function SitePlanStep({
                   projectId={projectId}
                   idAttachmentFileName={fileName}
                   hideContactInfo={true}
+                  isAuthorized={o.is_authorized || false}
+                  onAuthorizedChange={handleAuthorizedChange}
                 />
               );
             })
@@ -897,7 +976,7 @@ export default function SitePlanStep({
         {viewMode ? (
         <div className="form-grid cols-3">
           <ViewRow label={t("application_number")} value={form.application_number} />
-          <ViewRow label={t("application_date")} value={form.application_date} />
+          <ViewRow label={t("application_date")} value={formatDate(form.application_date, i18n.language)} />
           <Field label={t("attach_land_site_plan")}>
             <FileAttachmentView
               fileUrl={applicationFileUrl}
@@ -910,15 +989,14 @@ export default function SitePlanStep({
       ) : (
         <div className="form-grid cols-3">
           <Field label={t("application_date")}>
-            <input
+            <DateInput
               className="input"
-              type="date"
-              value={form.application_date || ""}
-              onChange={(e) => {
-                setF("application_date", e.target.value);
+              value={form.application_date}
+              onChange={(value) => {
+                setF("application_date", value);
                 // عند تغيير التاريخ، نحدث رقم المعاملة تلقائياً
-                if (e.target.value) {
-                  const date = new Date(e.target.value);
+                if (value) {
+                  const date = new Date(value);
                   const year = date.getFullYear();
                   const currentNumber = form.application_number || "";
                   
@@ -933,6 +1011,7 @@ export default function SitePlanStep({
                   }
                 }
               }}
+              placeholder="dd / mm / yyyy"
             />
           </Field>
           <Field label={
@@ -972,7 +1051,6 @@ export default function SitePlanStep({
                 setF("application_file", file);
                 if (file) {
                   // استخدام الاسم الموحد بدلاً من الاسم الأصلي
-                  const { getStandardFileName } = require("../../../../utils/fileNaming");
                   const originalExtension = file.name.substring(file.name.lastIndexOf('.'));
                   const standardFileName = getStandardFileName('application_file', 0, originalExtension);
                   setApplicationFileName(standardFileName);

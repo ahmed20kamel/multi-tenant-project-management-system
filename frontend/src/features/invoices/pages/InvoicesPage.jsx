@@ -6,6 +6,7 @@ import PageLayout from "../../../components/layout/PageLayout";
 import Button from "../../../components/common/Button";
 import Dialog from "../../../components/common/Dialog";
 import UnifiedSelect from "../../../components/common/Select";
+import DateInput from "../../../components/fields/DateInput";
 import { formatMoney, formatDate } from "../../../utils/formatters";
 import "./InvoicesPage.css";
 
@@ -277,20 +278,18 @@ export default function InvoicesPage() {
               isClearable
             />
             
-            <input
-              type="date"
+            <DateInput
               className="prj-input"
               placeholder={t("date_from")}
               value={filters.date_from}
-              onChange={(e) => setFilters({ ...filters, date_from: e.target.value })}
+              onChange={(value) => setFilters({ ...filters, date_from: value })}
             />
             
-            <input
-              type="date"
+            <DateInput
               className="prj-input"
               placeholder={t("date_to")}
               value={filters.date_to}
-              onChange={(e) => setFilters({ ...filters, date_to: e.target.value })}
+              onChange={(value) => setFilters({ ...filters, date_to: value })}
             />
           </div>
 

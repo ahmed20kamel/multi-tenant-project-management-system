@@ -6,6 +6,7 @@ import PageLayout from "../../../components/layout/PageLayout";
 import Button from "../../../components/common/Button";
 import ViewRow from "../../../components/forms/ViewRow";
 import { formatMoney, formatDate } from "../../../utils/formatters";
+import { handleFileClick } from "../../../utils/fileHelpers";
 
 export default function ViewPaymentPage() {
   const { paymentId } = useParams();
@@ -235,7 +236,7 @@ export default function ViewPaymentPage() {
                 <ViewRow 
                   label={t("invoice_file")} 
                   value={
-                    <a href={payment.invoice_file} target="_blank" rel="noopener noreferrer" className="prj-link">
+                    <a href="#" onClick={handleFileClick(payment.invoice_file)} className="prj-link" style={{ cursor: "pointer" }}>
                       {t("view_file")}
                     </a>
                   } 
@@ -245,7 +246,7 @@ export default function ViewPaymentPage() {
                 <ViewRow 
                   label={t("receipt_voucher")} 
                   value={
-                    <a href={payment.receipt_voucher} target="_blank" rel="noopener noreferrer" className="prj-link">
+                    <a href="#" onClick={handleFileClick(payment.receipt_voucher)} className="prj-link" style={{ cursor: "pointer" }}>
                       {t("view_file")}
                     </a>
                   } 
@@ -255,7 +256,7 @@ export default function ViewPaymentPage() {
                 <ViewRow 
                   label={t("bank_payment_attachments")} 
                   value={
-                    <a href={payment.bank_payment_attachments} target="_blank" rel="noopener noreferrer" className="prj-link">
+                    <a href="#" onClick={handleFileClick(payment.bank_payment_attachments)} className="prj-link" style={{ cursor: "pointer" }}>
                       {t("view_file")}
                     </a>
                   } 
