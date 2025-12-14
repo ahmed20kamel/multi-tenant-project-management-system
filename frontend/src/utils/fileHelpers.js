@@ -74,11 +74,31 @@ export function buildFileUrl(fileUrl) {
   const encodedPath = mediaPath.split('/').map(segment => encodeURIComponent(segment)).join('/');
   
   const isDev = import.meta.env.DEV;
-  const apiBase = isDev ? "/api" : (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+  let apiBase;
+  
+  if (isDev) {
+    // في التطوير: استخدام /api
+    apiBase = "/api";
+  } else {
+    // في الإنتاج: استخدام VITE_API_URL أو window.location.origin
+    const envApiUrl = import.meta.env.VITE_API_URL || "";
+    if (envApiUrl) {
+      // إذا كان VITE_API_URL موجود، نستخدمه (يجب أن يحتوي على /api)
+      apiBase = envApiUrl.replace(/\/+$/, "");
+      // التأكد من أن apiBase ينتهي بـ /api
+      if (!apiBase.endsWith("/api")) {
+        apiBase = apiBase.endsWith("/") ? `${apiBase}api` : `${apiBase}/api`;
+      }
+    } else {
+      // إذا لم يكن موجود، نستخدم window.location.origin + /api
+      apiBase = `${window.location.origin}/api`;
+    }
+  }
+  
   const apiUrl = `${apiBase}/files/${encodedPath}`;
   
   if (process.env.NODE_ENV === "development") {
-    console.log("buildFileUrl:", { fileUrl, mediaPath, encodedPath, apiUrl });
+    console.log("buildFileUrl:", { fileUrl, mediaPath, encodedPath, apiBase, apiUrl });
   }
   
   return apiUrl;

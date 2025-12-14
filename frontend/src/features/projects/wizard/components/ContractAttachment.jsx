@@ -8,6 +8,7 @@ import FileAttachmentView from "../../../../components/file-upload/FileAttachmen
 import DateInput from "../../../../components/fields/DateInput";
 import Button from "../../../../components/common/Button";
 import { extractFileNameFromUrl } from "../../../../utils/fileHelpers";
+import { formatDate } from "../../../../utils/formatters";
 
 const ATTACHMENT_TYPES = [
   { value: "appendix", label: "ملحق عقد" },

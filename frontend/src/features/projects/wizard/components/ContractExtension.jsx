@@ -8,6 +8,7 @@ import DateInput from "../../../../components/fields/DateInput";
 import Button from "../../../../components/common/Button";
 import NumberField from "../../../../components/forms/NumberField";
 import { extractFileNameFromUrl } from "../../../../utils/fileHelpers";
+import { formatDate } from "../../../../utils/formatters";
 
 export default function ContractExtension({
   extension,
