@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../services/api";
@@ -33,12 +33,13 @@ export default function OwnersPage() {
     q: "",
   });
 
-  useEffect(() => {
-    loadOwners();
-    return () => clearTimeout(toastTimer.current);
-  }, []);
+  const showToast = (type, msg) => {
+    setToast({ type, msg });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
+  };
 
-  const loadOwners = async () => {
+  const loadOwners = useCallback(async () => {
     setLoading(true);
     try {
       const { data: projects } = await api.get("projects/");
@@ -52,9 +53,9 @@ export default function OwnersPage() {
           try {
             const { data: sp } = await api.get(`projects/${projectId}/siteplan/`);
             const first = Array.isArray(sp) ? sp[0] : null;
-            // ✅ عرض فقط المالك الأول (الذي المشروع باسمه)
+            // ✅ عرض المالك المفوض (Single Source of Truth) وإلا أول مالك
             if (first?.owners?.length) {
-              const owner = first.owners[0]; // المالك الأول فقط
+              const owner = first.owners.find((o) => o.is_authorized) || first.owners[0];
               // التأكد من وجود owner_name_ar و owner_name_en
               const ownerNameAr = owner?.owner_name_ar || owner?.owner_name || "";
               const ownerNameEn = owner?.owner_name_en || "";
@@ -120,13 +121,22 @@ export default function OwnersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAR, t]);
 
-  const showToast = (type, msg) => {
-    setToast({ type, msg });
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 3000);
-  };
+  useEffect(() => {
+    loadOwners();
+    return () => clearTimeout(toastTimer.current);
+  }, [loadOwners]);
+
+  useEffect(() => {
+    const handler = () => loadOwners();
+    window.addEventListener("siteplan-owners-updated", handler);
+    window.addEventListener("contract-updated", handler);
+    return () => {
+      window.removeEventListener("siteplan-owners-updated", handler);
+      window.removeEventListener("contract-updated", handler);
+    };
+  }, [loadOwners]);
 
   const filteredOwners = useMemo(() => {
     const q = filters.q.trim().toLowerCase();

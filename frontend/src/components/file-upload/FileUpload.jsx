@@ -1,10 +1,9 @@
 // frontend/src/components/FileUpload.jsx
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FaFile, FaCheckCircle, FaTimes, FaEye } from 'react-icons/fa';
-import { processFileForUpload, formatFileSize, validateFileSize } from '../../utils/fileCompression';
+import { formatFileSize, validateFileSize } from '../../utils/fileCompression';
 import Button from '../common/Button';
-import { getStandardFileName } from '../../utils/fileNaming';
 import { buildFileUrl, extractFileNameFromUrl } from '../../utils/fileHelpers';
 import './FileUpload.css';
 
@@ -29,7 +28,8 @@ export default function FileUpload({
   value, // File أو null
   onChange, // (file: File | null) => void
   onProgress, // (progress: number) => void (اختياري)
-  accept = ".pdf,.jpg,.jpeg,.png,.doc,.docx",
+  // يتم تجاهل accept الخارجي لضمان توحيد PDF فقط
+  accept = "application/pdf",
   maxSizeMB = 10,
   label,
   disabled = false,
@@ -45,12 +45,11 @@ export default function FileUpload({
   const { t } = useTranslation();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
-  const handleFileSelect = async (e) => {
-    const file = e.target.files?.[0];
+  const processAndSetFile = useCallback(async (file) => {
     if (!file) return;
-
     setError('');
     setIsProcessing(true);
 
@@ -58,26 +57,39 @@ export default function FileUpload({
       // التحقق من الحجم
       if (!validateFileSize(file, maxSizeMB)) {
         setError(t('file_too_large') || `الملف كبير جداً. الحد الأقصى: ${maxSizeMB}MB`);
-        e.target.value = '';
         setIsProcessing(false);
         return;
       }
 
-      // معالجة الملف (ضغط الصور)
-      const processedFile = await processFileForUpload(file, compressionOptions);
-      
-      onChange(processedFile);
+      // السماح فقط بملفات PDF
+      const isPdf =
+        file.type === 'application/pdf' ||
+        (file.name && file.name.toLowerCase().endsWith('.pdf'));
+      if (!isPdf) {
+        setError('يُسمح برفع ملفات PDF فقط');
+        setIsProcessing(false);
+        return;
+      }
+
+      // لا يوجد ضغط أو معالجة للصور لأننا نسمح بـ PDF فقط
+      onChange(file);
       setError('');
     } catch (err) {
       console.error('خطأ في معالجة الملف:', err);
-      // في حال فشل المعالجة، نستخدم الملف الأصلي بدون إظهار خطأ أحمر
-      onChange(file);
-      setError('');
+      setError('حدث خطأ أثناء رفع الملف');
     } finally {
       setIsProcessing(false);
-      // إعادة تعيين input للسماح باختيار نفس الملف مرة أخرى
-      e.target.value = '';
     }
+  }, [compressionOptions, maxSizeMB, onChange, t]);
+
+  const effectiveAccept = "application/pdf";
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processAndSetFile(file);
+    // إعادة تعيين input للسماح باختيار نفس الملف مرة أخرى
+    e.target.value = '';
   };
 
   const handleRemove = () => {
@@ -97,6 +109,32 @@ export default function FileUpload({
   const handleInputClick = () => {
     if (!disabled && !isProcessing && fileInputRef.current) {
       fileInputRef.current.click();
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    if (disabled || isProcessing) return;
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    if (disabled || isProcessing) {
+      setIsDragOver(false);
+      return;
+    }
+    const file = e.dataTransfer?.files?.[0];
+    setIsDragOver(false);
+    if (file) {
+      await processAndSetFile(file);
+      // إعادة تعيين input للسماح باختيار نفس الملف مرة أخرى
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -193,7 +231,13 @@ export default function FileUpload({
   };
 
   return (
-    <div className={`file-upload-wrapper ${className}`}>
+    <div
+      className={`file-upload-wrapper ${className} ${isDragOver ? 'drag-over' : ''}`}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {label && <label className="field-label">{label}</label>}
       
       {/* الملف الموجود سابقاً */}
@@ -244,7 +288,7 @@ export default function FileUpload({
           <input
             ref={fileInputRef}
             type="file"
-            accept={accept}
+            accept={effectiveAccept}
             onChange={handleFileSelect}
             disabled={disabled || isProcessing}
             className="file-input-hidden"
@@ -311,7 +355,7 @@ export default function FileUpload({
           <input
             ref={fileInputRef}
             type="file"
-            accept={accept}
+            accept={effectiveAccept}
             onChange={handleFileSelect}
             disabled={disabled || isProcessing}
             className="file-input-hidden"
@@ -325,7 +369,7 @@ export default function FileUpload({
           <input
             ref={fileInputRef}
             type="file"
-            accept={accept}
+            accept={effectiveAccept}
             onChange={handleFileSelect}
             disabled={disabled || isProcessing}
             className="file-input-hidden"
@@ -335,7 +379,7 @@ export default function FileUpload({
             <span className="file-input-text">
               {isProcessing 
                 ? (t('processing_file') || 'جاري معالجة الملف...')
-                : (t('select_file') || 'اختر ملف')
+                : (t('select_file') || 'اختر ملف PDF')
               }
             </span>
             <span className="file-input-browse">{t('browse') || 'تصفح'}</span>
@@ -352,7 +396,7 @@ export default function FileUpload({
 
       {/* معلومات إضافية */}
       <div className="file-upload-hint">
-        {t('max_file_size') || `الحد الأقصى للحجم: ${maxSizeMB}MB`}
+        {`يُسمح بملفات PDF فقط - الحد الأقصى للحجم: ${maxSizeMB}MB`}
       </div>
     </div>
   );

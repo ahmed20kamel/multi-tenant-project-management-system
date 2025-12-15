@@ -51,7 +51,10 @@ export default function OwnerForm({ owner, index, isView, onUpdate, onRemove, ca
           <ViewRow label={t("owner_name_ar")} value={owner.owner_name_ar} />
           <ViewRow label={t("owner_name_en")} value={owner.owner_name_en} />
           <ViewRow label={t("nationality")} value={owner.nationality} />
-          <ViewRow label={t("share_percent")} value={owner.share_percent ? `${owner.share_percent}%` : "0%"} />
+          <ViewRow
+            label={t("share_percent")}
+            value={owner.share_percent ? `${parseFloat(owner.share_percent) % 1 === 0 ? parseInt(owner.share_percent, 10) : parseFloat(owner.share_percent)}%` : "0%"}
+          />
           <ViewRow label={t("phone")} value={owner.phone} />
           <ViewRow label={t("email")} value={owner.email} />
           <ViewRow label={t("id_number")} value={owner.id_number} />

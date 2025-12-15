@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../../services/api";
@@ -35,6 +35,8 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
   const navigate = useNavigate();
   const { user } = useAuth();
   const { form, setF, existingId, setExistingId, isView: isViewState, setIsView } = useContract(projectId);
+  const authorizedOwnerLoadingRef = useRef(false);
+  const authorizedOwnerLoadedOnceRef = useRef(false);
   
   // ✅ تحميل بيانات المقاول من TenantSettings تلقائياً (أولوية عالية)
   useEffect(() => {
@@ -370,6 +372,43 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
       } catch (e) {}
     })();
     // ✅ إزالة setF من dependencies لأنه دالة مستقرة من useContract
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  // ✅ مزامنة المالك المفوض من الـ SitePlan ليكون مصدر الحقيقة (مرة واحدة عند الدخول، أو عند حدث التحديث)
+  useEffect(() => {
+    if (!projectId) return;
+
+    const loadAuthorizedOwner = async (force = false) => {
+      if (authorizedOwnerLoadingRef.current) return;
+      if (!force && authorizedOwnerLoadedOnceRef.current) return;
+      authorizedOwnerLoadingRef.current = true;
+      try {
+        const { data } = await api.get(`projects/${projectId}/siteplan/`);
+        if (Array.isArray(data) && data.length > 0) {
+          const spOwners = Array.isArray(data[0]?.owners) ? data[0].owners : [];
+          if (spOwners.length) {
+            setF("owners", spOwners.map((o) => ({ ...o })));
+          }
+        }
+        authorizedOwnerLoadedOnceRef.current = true;
+      } catch (e) {
+        console.error("Failed to load siteplan owners:", e);
+      }
+      authorizedOwnerLoadingRef.current = false;
+    };
+
+    // تحميل مرة واحدة عند الدخول
+    loadAuthorizedOwner(false);
+
+    // تحديث عند حدث siteplan-owners-updated فقط
+    const handler = (ev) => {
+      if (ev?.detail?.projectId && ev.detail.projectId !== projectId) return;
+      loadAuthorizedOwner(true);
+    };
+    window.addEventListener("siteplan-owners-updated", handler);
+    return () => window.removeEventListener("siteplan-owners-updated", handler);
+    // عمداً بدون setF لضمان استقرار الـ deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
@@ -850,7 +889,11 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
           {viewMode ? (
             <div className="form-grid cols-1" style={{ gap: "var(--space-4)" }}>
               <ViewRow
-                label={t("contract.fields.contract_number")}
+                label={
+                  form.contract_classification === "housing_loan_program"
+                    ? (isAR ? "رقم القرض" : "Loan Number")
+                    : (isAR ? "رقم العقد" : "Contract Number")
+                }
                 value={form.tender_no}
                 tip={isHousing ? t("contract.notes.housing_tender_info") : undefined}
               />
@@ -872,7 +915,13 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
             </div>
           ) : (
             <div className="form-grid cols-1" style={{ gap: "var(--space-4)" }}>
-              <Field label={t("contract.fields.contract_number")}>
+              <Field
+                label={
+                  form.contract_classification === "housing_loan_program"
+                    ? (isAR ? "رقم القرض" : "Loan Number")
+                    : (isAR ? "رقم العقد" : "Contract Number")
+                }
+              >
                 <div className="row row--align-center row--gap-8">
                   <input
                     className="input"

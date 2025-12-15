@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../../../services/api";
@@ -161,14 +161,29 @@ export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
     }).catch(() => {});
   }, [projectId]);
 
-  /* تحميل بيانات مخطط الأرض */
-  useEffect(() => {
-    api.get(`projects/${projectId}/siteplan/`).then((res) => {
-      if (Array.isArray(res.data) && res.data.length > 0) {
-        setSiteplan(res.data[0]);
+  /* تحميل بيانات مخطط الأرض + إعادة التحميل عند تحديث الملاك */
+  const fetchSiteplan = useCallback(async () => {
+    try {
+      const { data } = await api.get(`projects/${projectId}/siteplan/`);
+      if (Array.isArray(data) && data.length > 0) {
+        setSiteplan(data[0]);
       }
-    });
+    } catch (e) {}
   }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetchSiteplan();
+  }, [projectId, fetchSiteplan]);
+
+  useEffect(() => {
+    const handler = (ev) => {
+      if (ev?.detail?.projectId && ev.detail.projectId !== projectId) return;
+      fetchSiteplan();
+    };
+    window.addEventListener("siteplan-owners-updated", handler);
+    return () => window.removeEventListener("siteplan-owners-updated", handler);
+  }, [projectId, fetchSiteplan]);
 
   /* تحميل بيانات أمر الترسية إن وجدت */
   useEffect(() => {
@@ -224,8 +239,10 @@ export default function AwardingStep({ projectId, onPrev, onNext, isView }) {
   let ownerFullName = "";
 
   if (owners.length > 0) {
-    ownerFullName = owners[0].owner_name_ar || owners[0].owner_name_en || "";
-    if (owners.length > 1) ownerFullName += ` وشركاؤه`;
+    const authorized = owners.find((o) => o.is_authorized);
+    const ownerToUse = authorized || owners[0];
+    ownerFullName = ownerToUse.owner_name_ar || ownerToUse.owner_name_en || "";
+    if (!authorized && owners.length > 1) ownerFullName += ` وشركاؤه`;
   }
 
   /* تحديد الاستشاري */

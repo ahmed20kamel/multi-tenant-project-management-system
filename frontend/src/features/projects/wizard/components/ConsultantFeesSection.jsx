@@ -38,6 +38,18 @@ export default function ConsultantFeesSection({
   const includesConsultant = form[`${prefix}_includes_consultant`];
   const showFees = includesConsultant === "yes";
 
+  const handlePercentChange = (field) => (e) => {
+    const raw = e.target.value;
+    if (raw === "") {
+      setF(field, "");
+      return;
+    }
+    const num = parseFloat(raw);
+    if (isNaN(num) || num < 0) return;
+    const normalized = num % 1 === 0 ? String(Math.floor(num)) : String(num);
+    setF(field, normalized);
+  };
+
   if (isView) {
     return (
       <div className="form-grid cols-1" style={{ gap: "var(--space-4)" }}>
@@ -84,7 +96,7 @@ export default function ConsultantFeesSection({
         <>
           <div className="form-grid cols-2" style={{ gap: "var(--space-4)" }}>
             <Field label={t("contract.fees.design_percent")}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexDirection: isAR ? "row-reverse" : "row" }}>
+              <div style={{ position: "relative" }}>
                 <input
                   className="input"
                   type="number"
@@ -92,20 +104,29 @@ export default function ConsultantFeesSection({
                   max="100"
                   step="0.01"
                   value={form[`${prefix}_fee_design_percent`] || ""}
-                  onChange={(e) => setF(`${prefix}_fee_design_percent`, e.target.value)}
+                  onChange={handlePercentChange(`${prefix}_fee_design_percent`)}
                   placeholder="0"
-                  style={{ flex: 1 }}
+                  dir={isAR ? "rtl" : "ltr"}
+                  style={{ paddingRight: isAR ? "8px" : "32px", paddingLeft: isAR ? "32px" : "8px" }}
                 />
-                <span style={{ 
-                  fontSize: "14px", 
-                  fontWeight: "500", 
-                  color: "var(--text)",
-                  minWidth: "20px"
-                }}>%</span>
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    pointerEvents: "none",
+                    fontSize: "14px",
+                    fontWeight: "500",
+                    color: "var(--text)",
+                    [isAR ? "left" : "right"]: "10px",
+                  }}
+                >
+                  %
+                </span>
               </div>
             </Field>
             <Field label={t("contract.fees.supervision_percent")}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexDirection: isAR ? "row-reverse" : "row" }}>
+              <div style={{ position: "relative" }}>
                 <input
                   className="input"
                   type="number"
@@ -113,16 +134,25 @@ export default function ConsultantFeesSection({
                   max="100"
                   step="0.01"
                   value={form[`${prefix}_fee_supervision_percent`] || ""}
-                  onChange={(e) => setF(`${prefix}_fee_supervision_percent`, e.target.value)}
+                  onChange={handlePercentChange(`${prefix}_fee_supervision_percent`)}
                   placeholder="0"
-                  style={{ flex: 1 }}
+                  dir={isAR ? "rtl" : "ltr"}
+                  style={{ paddingRight: isAR ? "8px" : "32px", paddingLeft: isAR ? "32px" : "8px" }}
                 />
-                <span style={{ 
-                  fontSize: "14px", 
-                  fontWeight: "500", 
-                  color: "var(--text)",
-                  minWidth: "20px"
-                }}>%</span>
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    pointerEvents: "none",
+                    fontSize: "14px",
+                    fontWeight: "500",
+                    color: "var(--text)",
+                    [isAR ? "left" : "right"]: "10px",
+                  }}
+                >
+                  %
+                </span>
               </div>
             </Field>
           </div>

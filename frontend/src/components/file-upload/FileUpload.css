@@ -164,6 +164,13 @@
   cursor: pointer;
 }
 
+.file-upload-wrapper.drag-over .file-input-display,
+.file-upload-wrapper.drag-over .existing-file-info,
+.file-upload-wrapper.drag-over .selected-file-info {
+  border: 2px dashed var(--primary, #3b82f6);
+  background: rgba(59, 130, 246, 0.08);
+}
+
 .file-input-hidden {
   position: absolute;
   width: 0;

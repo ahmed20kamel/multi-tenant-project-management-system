@@ -13,7 +13,7 @@ export default function FileUploadWithProgressBar({
   onChange,
   uploadProgress = 0, // progress من 0-100
   isUploading = false, // حالة الرفع
-  accept = ".pdf,.jpg,.jpeg,.png,.doc,.docx",
+  accept = "application/pdf",
   maxSizeMB = 10,
   label,
   disabled = false,
