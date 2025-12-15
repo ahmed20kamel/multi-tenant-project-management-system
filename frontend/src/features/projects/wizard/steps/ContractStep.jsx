@@ -230,6 +230,22 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
             setStartOrderFileUrl(contractData.start_order_file);
             setStartOrderFileName(contractData.start_order_file_name || extractFileNameFromUrl(contractData.start_order_file));
           }
+
+          // ✅ تحديث المرفقات الديناميكية بعد الحفظ لضمان حفظ السعر وروابط الملفات
+          if (contractData.attachments && Array.isArray(contractData.attachments)) {
+            const loadedAttachments = contractData.attachments
+              .filter(att => att && att.type !== "main_contract")
+              .map(att => ({
+                type: att.type || "appendix",
+                date: att.date || "",
+                notes: att.notes || "",
+                price: att.price ?? "",
+                file: null,
+                file_url: att.file_url || null,
+                file_name: att.file_name || (att.file_url ? extractFileNameFromUrl(att.file_url) : null),
+              }));
+            setF("attachments", loadedAttachments);
+          }
           
           // ✅ تحميل المرفقات الديناميكية فقط (بدون الملفات القديمة)
           // ✅ العقد الأصيل (contract_file, contract_appendix_file, contract_explanation_file) 
@@ -252,6 +268,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                 type: att.type || "appendix",
                 date: att.date || "",
                 notes: att.notes || "",
+                price: att.price ?? "",
                 file: null, // لا نحمل File object
                 file_url: att.file_url || null,
                 file_name: att.file_name || (att.file_url ? extractFileNameFromUrl(att.file_url) : null),
@@ -536,14 +553,18 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
         const hasType = att.type && String(att.type).trim() !== "";
         const hasFile = att.file instanceof File || (att.file_url && String(att.file_url).trim() !== "");
         const hasNotes = att.notes && String(att.notes).trim() !== "";
-        return hasType || hasFile || hasNotes;
+          const hasPrice = att.price !== undefined && att.price !== null && String(att.price).trim() !== "";
+          return hasType || hasFile || hasNotes || hasPrice;
       });
       
       const attachmentsData = validAttachments.map((att, idx) => {
+        const rawPrice = att.price;
+        const parsedPrice = rawPrice === "" || rawPrice === null || rawPrice === undefined ? null : Number(rawPrice);
         const attData = {
           type: String(att.type || "appendix").trim(), // ✅ القيمة الافتراضية هي "appendix" وليس "main_contract"
           date: toIsoDate(att.date) || null,
           notes: String(att.notes || "").trim(),
+          price: Number.isFinite(parsedPrice) ? parsedPrice : null,
           file_url: att.file_url || null,
           file_name: att.file_name || null,
         };
@@ -1525,6 +1546,7 @@ export default function ContractStep({ projectId, onPrev, onNext, isView: isView
                     file: null,
                     file_url: null,
                     file_name: null,
+                price: "",
                     notes: "",
                   };
                   setF("attachments", [...(form.attachments || []), newAttachment]);

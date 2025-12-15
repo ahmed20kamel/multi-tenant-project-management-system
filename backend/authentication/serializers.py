@@ -125,22 +125,39 @@ class TenantThemeSerializer(serializers.ModelSerializer):
     
     def get_tenant_id(self, obj):
         """الحصول على tenant_id"""
-        return str(obj.tenant.id) if obj.tenant else None
+        try:
+            return str(obj.tenant.id) if obj.tenant else None
+        except Exception:
+            return None
     
     def get_logo_url(self, obj):
-        if obj.company_logo:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.company_logo.url)
-            return obj.company_logo.url
+        try:
+            if obj.company_logo:
+                request = self.context.get('request')
+                if request:
+                    try:
+                        return request.build_absolute_uri(obj.company_logo.url)
+                    except Exception:
+                        # إذا فشل بناء URL، نرجع المسار النسبي
+                        return obj.company_logo.url if hasattr(obj.company_logo, 'url') else None
+                return obj.company_logo.url if hasattr(obj.company_logo, 'url') else None
+        except Exception:
+            return None
         return None
     
     def get_background_image_url(self, obj):
-        if obj.background_image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.background_image.url)
-            return obj.background_image.url
+        try:
+            if obj.background_image:
+                request = self.context.get('request')
+                if request:
+                    try:
+                        return request.build_absolute_uri(obj.background_image.url)
+                    except Exception:
+                        # إذا فشل بناء URL، نرجع المسار النسبي
+                        return obj.background_image.url if hasattr(obj.background_image, 'url') else None
+                return obj.background_image.url if hasattr(obj.background_image, 'url') else None
+        except Exception:
+            return None
         return None
 
 

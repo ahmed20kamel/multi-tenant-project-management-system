@@ -154,8 +154,9 @@ export default function App() {
         {/* صفحات الملاك والاستشاريين */}
             <Route path="/owners/:ownerName" element={<ProtectedRoute><OwnerDetailPage /></ProtectedRoute>} />
             <Route path="/owners/:ownerName/edit" element={<ProtectedRoute><EditOwnerPage /></ProtectedRoute>} />
-            <Route path="/consultants/:consultantName" element={<ProtectedRoute><ConsultantDetailPage /></ProtectedRoute>} />
-            <Route path="/consultants/:consultantName/edit" element={<ProtectedRoute><EditConsultantPage /></ProtectedRoute>} />
+            <Route path="/consultants/new" element={<ProtectedRoute><EditConsultantPage /></ProtectedRoute>} />
+            <Route path="/consultants/:consultantId" element={<ProtectedRoute><ConsultantDetailPage /></ProtectedRoute>} />
+            <Route path="/consultants/:consultantId/edit" element={<ProtectedRoute><EditConsultantPage /></ProtectedRoute>} />
             {/* <Route path="/contractors/:contractorName" element={<ProtectedRoute><ContractorDetailPage /></ProtectedRoute>} /> */}
 
             {/* صفحة الملف الشخصي */}

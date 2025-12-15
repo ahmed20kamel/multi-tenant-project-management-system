@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
-from .models import Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment
+from .models import Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment, Consultant, ProjectConsultant
 
 # ---------- Project ----------
 @admin.register(Project)
@@ -201,3 +201,67 @@ class PaymentAdmin(admin.ModelAdmin):
     list_filter = ("date", "project")
     search_fields = ("project__name", "description")
     date_hierarchy = "date"
+
+
+# ---------- Consultant ----------
+@admin.register(Consultant)
+class ConsultantAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "name_en", "license_no", "phone", "email", "projects_count", "created_at")
+    list_filter = ("tenant",)
+    search_fields = ("name", "name_en", "license_no", "phone", "email")
+    readonly_fields = ("created_at", "updated_at", "image_preview")
+    fieldsets = (
+        ("معلومات أساسية", {
+            "fields": (
+                "tenant",
+                "name",
+                "name_en",
+                "license_no",
+            )
+        }),
+        ("معلومات الاتصال", {
+            "fields": (
+                "phone",
+                "email",
+                "address",
+            )
+        }),
+        ("صورة الاستشاري", {
+            "fields": (
+                "image",
+                "image_preview",
+            )
+        }),
+        ("ملاحظات", {
+            "fields": ("notes",)
+        }),
+        ("معلومات إضافية", {
+            "fields": (
+                "created_at",
+                "updated_at",
+            )
+        }),
+    )
+    
+    def image_preview(self, obj):
+        """معاينة صورة الاستشاري"""
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="max-width: 200px; max-height: 200px; border: 1px solid #ddd; padding: 5px; border-radius: 8px;" />',
+                obj.image.url
+            )
+        return "لا توجد صورة"
+    image_preview.short_description = "معاينة الصورة"
+    
+    def projects_count(self, obj):
+        """عدد المشاريع المرتبطة"""
+        return obj.projects.count()
+    projects_count.short_description = "عدد المشاريع"
+
+
+# ---------- ProjectConsultant ----------
+@admin.register(ProjectConsultant)
+class ProjectConsultantAdmin(admin.ModelAdmin):
+    list_display = ("id", "project", "consultant", "role", "created_at")
+    list_filter = ("role", "consultant__tenant")
+    search_fields = ("project__name", "consultant__name", "consultant__name_en")

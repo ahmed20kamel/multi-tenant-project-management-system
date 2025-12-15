@@ -15,7 +15,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from .models import (
     Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment,
-    Variation, ActualInvoice
+    Variation, ActualInvoice, Consultant, ProjectConsultant
 )
 from .serializers import (
     ProjectSerializer,
@@ -26,6 +26,8 @@ from .serializers import (
     PaymentSerializer,
     VariationSerializer,
     ActualInvoiceSerializer,
+    ConsultantSerializer,
+    ProjectConsultantSerializer,
 )
 from decimal import Decimal
 from datetime import datetime
@@ -1092,3 +1094,117 @@ def download_file(request, file_path):
             {"detail": "Error downloading file"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+# ===============================
+# الاستشاريون
+# ===============================
+class ConsultantViewSet(viewsets.ModelViewSet):
+    """ViewSet لإدارة الاستشاريين"""
+    queryset = Consultant.objects.all().order_by("name")
+    serializer_class = ConsultantSerializer
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """تصفية الاستشاريين حسب tenant المستخدم"""
+        queryset = super().get_queryset()
+        
+        # إذا كان المستخدم superuser، يمكنه رؤية جميع الاستشاريين
+        if self.request.user.is_superuser:
+            return queryset
+        
+        # تصفية حسب tenant المستخدم
+        tenant = None
+        if hasattr(self.request, 'tenant') and self.request.tenant:
+            tenant = self.request.tenant
+        elif hasattr(self.request.user, 'tenant') and self.request.user.tenant:
+            tenant = self.request.user.tenant
+        
+        if tenant:
+            queryset = queryset.filter(tenant=tenant)
+        else:
+            queryset = queryset.none()
+        
+        # فلترة حسب البحث
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(
+                models.Q(name__icontains=search) |
+                models.Q(name_en__icontains=search) |
+                models.Q(license_no__icontains=search)
+            )
+        
+        return queryset
+    
+    def perform_create(self, serializer):
+        """ربط الاستشاري الجديد بـ tenant المستخدم"""
+        tenant = None
+        if hasattr(self.request, 'tenant') and self.request.tenant:
+            tenant = self.request.tenant
+        elif hasattr(self.request.user, 'tenant') and self.request.user.tenant:
+            tenant = self.request.user.tenant
+        
+        if not tenant:
+            from rest_framework import serializers as drf_serializers
+            raise drf_serializers.ValidationError({
+                'tenant': 'User must be associated with a tenant'
+            })
+        
+        serializer.save(tenant=tenant)
+    
+    @action(detail=True, methods=['get'])
+    def projects(self, request, pk=None):
+        """الحصول على قائمة المشاريع المرتبطة بالاستشاري"""
+        consultant = self.get_object()
+        project_consultants = ProjectConsultant.objects.filter(consultant=consultant)
+        
+        projects_data = []
+        for pc in project_consultants:
+            projects_data.append({
+                "project_id": pc.project.id,
+                "project_name": pc.project.name or f"Project #{pc.project.id}",
+                "role": pc.role,
+                "role_display": dict(ProjectConsultant.ROLE_CHOICES).get(pc.role, pc.role),
+            })
+        
+        return Response(projects_data)
+
+
+class ProjectConsultantViewSet(viewsets.ModelViewSet):
+    """ViewSet لإدارة ربط الاستشاريين بالمشاريع"""
+    queryset = ProjectConsultant.objects.all()
+    serializer_class = ProjectConsultantSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """تصفية حسب tenant المستخدم"""
+        queryset = super().get_queryset()
+        
+        if self.request.user.is_superuser:
+            return queryset
+        
+        tenant = None
+        if hasattr(self.request, 'tenant') and self.request.tenant:
+            tenant = self.request.tenant
+        elif hasattr(self.request.user, 'tenant') and self.request.user.tenant:
+            tenant = self.request.user.tenant
+        
+        if tenant:
+            queryset = queryset.filter(
+                models.Q(project__tenant=tenant) | models.Q(consultant__tenant=tenant)
+            )
+        else:
+            queryset = queryset.none()
+        
+        # فلترة حسب المشروع
+        project_id = self.request.query_params.get('project', None)
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        
+        # فلترة حسب الاستشاري
+        consultant_id = self.request.query_params.get('consultant', None)
+        if consultant_id:
+            queryset = queryset.filter(consultant_id=consultant_id)
+        
+        return queryset

@@ -9,6 +9,8 @@ from .views import (
     PaymentViewSet,
     VariationViewSet,
     ActualInvoiceViewSet,
+    ConsultantViewSet,
+    ProjectConsultantViewSet,
     download_file,
 )
 
@@ -60,6 +62,19 @@ actual_invoice_detail = ActualInvoiceViewSet.as_view(
     {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
 )
 
+# Consultant ⬇️
+consultant_list = ConsultantViewSet.as_view({"get": "list", "post": "create"})
+consultant_detail = ConsultantViewSet.as_view(
+    {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
+)
+consultant_projects = ConsultantViewSet.as_view({"get": "projects"})
+
+# ProjectConsultant ⬇️
+project_consultant_list = ProjectConsultantViewSet.as_view({"get": "list", "post": "create"})
+project_consultant_detail = ProjectConsultantViewSet.as_view(
+    {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
+)
+
 urlpatterns = [
     path("projects/", project_list, name="project-list"),
     path("projects/<int:pk>/", project_detail, name="project-detail"),
@@ -94,4 +109,13 @@ urlpatterns = [
     
     # ✅ Protected File Download endpoint
     path("files/<path:file_path>", download_file, name="download-file"),
+    
+    # ✅ Consultant endpoints
+    path("consultants/", consultant_list, name="consultant-list"),
+    path("consultants/<int:pk>/", consultant_detail, name="consultant-detail"),
+    path("consultants/<int:pk>/projects/", consultant_projects, name="consultant-projects"),
+    
+    # ✅ ProjectConsultant endpoints
+    path("project-consultants/", project_consultant_list, name="project-consultant-list"),
+    path("project-consultants/<int:pk>/", project_consultant_detail, name="project-consultant-detail"),
 ]

@@ -4,9 +4,11 @@ import { useTranslation } from "react-i18next";
 import CreatableSelect from "react-select/creatable";
 import Field from "../../../../components/forms/Field";
 import ViewRow from "../../../../components/forms/ViewRow";
+import Button from "../../../../components/common/Button";
 import { loadSavedList, saveToList } from "../../../../utils/localStorage";
 import { formatUAEPhone } from "../../../../utils/inputFormatters";
 import { api } from "../../../../services/api";
+import { FaPlus } from "react-icons/fa";
 
 export default function PersonField({
   type = "consultant", // "consultant" or "contractor"
@@ -559,25 +561,80 @@ export default function PersonField({
         </Field>
       </div>
       
-      {/* ✅ السطر الثاني: الرخصة */}
+      {/* ✅ السطر الثاني: الرخصة مع زر الإضافة */}
       <div style={{ width: "100%" }}>
         <Field label={licenseLabel}>
-          <input
-            className="input"
-            placeholder={licensePlaceholder}
-            value={licenseValue || ""}
-            onChange={(e) => {
-              let value = e.target.value;
-              // ✅ إذا كان استشاري، نضيف CN- تلقائياً
-              if (type === "consultant" && value && !value.startsWith("CN-")) {
-                // إزالة CN- إذا كان موجوداً مسبقاً
-                value = value.replace(/^CN-/, "");
-                value = "CN-" + value;
-              }
-              onLicenseChange(value);
-            }}
-            style={type === "consultant" ? { textTransform: "uppercase" } : {}}
-          />
+          <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+            <input
+              className="input"
+              placeholder={licensePlaceholder}
+              value={licenseValue || ""}
+              onChange={(e) => {
+                let value = e.target.value;
+                // ✅ إذا كان استشاري، نضيف CN- تلقائياً
+                if (type === "consultant" && value && !value.startsWith("CN-")) {
+                  // إزالة CN- إذا كان موجوداً مسبقاً
+                  value = value.replace(/^CN-/, "");
+                  value = "CN-" + value;
+                }
+                onLicenseChange(value);
+              }}
+              style={{ 
+                flex: 1,
+                ...(type === "consultant" ? { textTransform: "uppercase" } : {})
+              }}
+            />
+            {/* ✅ زر الإضافة - يظهر فقط إذا كان الاستشاري غير موجود في القائمة */}
+            {type === "consultant" && nameValue && licenseValue && !isConsultantInList && (
+              <button
+                type="button"
+                onClick={handleAddNew}
+                style={{
+                  minWidth: "120px",
+                  padding: "12px 24px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  whiteSpace: "nowrap",
+                  fontWeight: 600,
+                  fontSize: "14px",
+                  color: "white",
+                  backgroundColor: "#22c55e",
+                  border: "2px solid #22c55e",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  boxShadow: "0 2px 8px rgba(34, 197, 94, 0.3)",
+                  transition: "all 0.2s ease",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "#16a34a";
+                  e.currentTarget.style.borderColor = "#16a34a";
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(34, 197, 94, 0.4)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "#22c55e";
+                  e.currentTarget.style.borderColor = "#22c55e";
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "0 2px 8px rgba(34, 197, 94, 0.3)";
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "0 1px 4px rgba(34, 197, 94, 0.3)";
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(34, 197, 94, 0.4)";
+                }}
+                title={t("add_consultant") || "إضافة استشاري جديد"}
+              >
+                <FaPlus style={{ fontSize: "16px", fontWeight: "bold" }} />
+                <span>{t("add") || "إضافة"}</span>
+              </button>
+            )}
+          </div>
         </Field>
       </div>
     </>

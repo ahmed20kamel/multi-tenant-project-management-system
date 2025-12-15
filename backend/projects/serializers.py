@@ -4,7 +4,7 @@ from django.db import models
 from rest_framework import serializers
 from .models import (
     Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding, Payment,
-    Variation, ActualInvoice
+    Variation, ActualInvoice, Consultant, ProjectConsultant
 )
 
 # Import WorkflowStage for serializer
@@ -2400,3 +2400,126 @@ class PaymentSerializer(serializers.ModelSerializer):
             if obj.project:
                 return obj.project.name or f"Project #{obj.project.id}"
             return None
+
+
+# =========================
+# Consultant
+# =========================
+class ConsultantSerializer(serializers.ModelSerializer):
+    """Serializer للاستشاري"""
+    image_url = serializers.SerializerMethodField()
+    projects_count = serializers.SerializerMethodField()
+    projects = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Consultant
+        fields = [
+            "id", "tenant",
+            "name", "name_en", "license_no",
+            "phone", "email", "address", "notes",
+            "image", "image_url",
+            "projects_count", "projects",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "tenant", "created_at", "updated_at", "projects_count", "projects"]
+    
+    def get_image_url(self, obj):
+        """الحصول على رابط صورة الاستشاري"""
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+    
+    def get_projects_count(self, obj):
+        """عدد المشاريع المرتبطة"""
+        try:
+            if hasattr(obj, 'projects'):
+                return obj.projects.count()
+            return 0
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error getting projects count for consultant {obj.id}: {e}")
+            return 0
+    
+    def get_projects(self, obj):
+        """قائمة المشاريع المرتبطة مع أدوار الاستشاري"""
+        from .models import ProjectConsultant
+        projects_data = []
+        ROLE_CHOICES = [
+            ('design', 'استشاري التصميم'),
+            ('supervision', 'استشاري الإشراف'),
+        ]
+        try:
+            if hasattr(obj, 'projects'):
+                for pc in obj.projects.all():
+                    try:
+                        projects_data.append({
+                            "project_id": pc.project.id,
+                            "project_name": pc.project.name or f"Project #{pc.project.id}",
+                            "role": pc.role,
+                            "role_display": dict(ROLE_CHOICES).get(pc.role, pc.role),
+                        })
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Error processing project consultant {pc.id}: {e}")
+                        continue
+        except Exception as e:
+            # في حالة عدم وجود projects related، نرجع قائمة فارغة
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error getting projects for consultant {obj.id if hasattr(obj, 'id') else 'unknown'}: {e}")
+        return projects_data
+    
+    def validate(self, data):
+        """التحقق من عدم تكرار الاستشاري"""
+        # tenant يتم تعيينه تلقائياً في perform_create، لذلك لا نحتاج للتحقق منه هنا
+        tenant = self.instance.tenant if self.instance else None
+        name = data.get('name', self.instance.name if self.instance else '')
+        license_no = data.get('license_no', self.instance.license_no if self.instance else '')
+        
+        # التحقق من التكرار فقط إذا كان هناك tenant
+        if tenant and name and license_no:
+            existing = Consultant.objects.filter(
+                tenant=tenant,
+                name=name,
+                license_no=license_no
+            )
+            if self.instance:
+                existing = existing.exclude(id=self.instance.id)
+            
+            if existing.exists():
+                raise serializers.ValidationError({
+                    'name': 'Consultant with this name and license number already exists for this tenant.'
+                })
+        
+        return data
+
+
+class ProjectConsultantSerializer(serializers.ModelSerializer):
+    """Serializer لربط الاستشاري بالمشروع"""
+    consultant = ConsultantSerializer(read_only=True)
+    consultant_id = serializers.PrimaryKeyRelatedField(
+        queryset=Consultant.objects.all(),
+        source='consultant',
+        write_only=True
+    )
+    project_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ProjectConsultant
+        fields = [
+            "id", "project", "consultant", "consultant_id", "role",
+            "project_name",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at", "project_name"]
+    
+    def get_project_name(self, obj):
+        """اسم المشروع"""
+        if obj.project:
+            return obj.project.name or f"Project #{obj.project.id}"
+        return None

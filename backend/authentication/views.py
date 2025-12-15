@@ -372,59 +372,88 @@ class TenantSettingsViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def theme(self, request):
         """الحصول على Theme الشركة (للقراءة فقط) - متاح لجميع المستخدمين داخل الشركة"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
-            # Super Admin لا يحتاج Theme
+            # Super Admin لا يحتاج Theme - نرجع theme افتراضي
             if request.user.is_superuser:
-                return Response(
-                    {'error': 'Super admin does not have a tenant theme'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
+                logger.info("Super admin requested theme, returning default")
+                return Response({
+                    'tenant_id': None,
+                    'company_name': 'System Admin',
+                    'logo_url': None,
+                    'background_image_url': None,
+                    'primary_color': '#f97316',
+                    'secondary_color': '#ea580c'
+                })
             
             # التحقق من وجود tenant
             if not hasattr(request.user, 'tenant') or not request.user.tenant:
-                return Response(
-                    {'error': 'User is not associated with any tenant'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
+                logger.warning(f"User {request.user.id} has no tenant, returning default theme")
+                return Response({
+                    'tenant_id': None,
+                    'company_name': '',
+                    'logo_url': None,
+                    'background_image_url': None,
+                    'primary_color': '#f97316',
+                    'secondary_color': '#ea580c'
+                })
             
             # محاولة الحصول على TenantSettings
             # Theme الشركة متاح لجميع المستخدمين داخل الشركة (Manager, Staff User, Company Super Admin)
             try:
                 # ✅ إعادة تحميل من قاعدة البيانات للتأكد من أحدث البيانات
-                settings = TenantSettings.objects.get(tenant=request.user.tenant)
+                settings = TenantSettings.objects.select_related('tenant').get(tenant=request.user.tenant)
                 
                 # ✅ Logging للتأكد من البيانات
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.info(f"Loading theme for tenant {request.user.tenant.id}")
-                logger.info(f"Company Logo in DB: {settings.company_logo}")
-                logger.info(f"Primary Color in DB: {settings.primary_color}")
-                logger.info(f"Secondary Color in DB: {settings.secondary_color}")
                 
                 serializer = TenantThemeSerializer(settings, context={'request': request})
                 theme_data = serializer.data
                 
-                # ✅ Logging للبيانات المُعادَة
-                logger.info(f"Theme data returned: {theme_data}")
+                # ✅ التأكد من وجود tenant_id
+                if not theme_data.get('tenant_id'):
+                    theme_data['tenant_id'] = str(request.user.tenant.id)
+                
+                # ✅ التأكد من وجود company_name
+                if not theme_data.get('company_name') and request.user.tenant:
+                    theme_data['company_name'] = request.user.tenant.name or ''
                 
                 return Response(theme_data)
             except TenantSettings.DoesNotExist:
                 # إذا لم تكن هناك إعدادات، نعيد Theme افتراضي
+                logger.warning(f"TenantSettings not found for tenant {request.user.tenant.id}, returning default theme")
                 return Response({
                     'tenant_id': str(request.user.tenant.id),
-                    'company_name': request.user.tenant.name,
+                    'company_name': request.user.tenant.name if request.user.tenant else '',
                     'logo_url': None,
+                    'background_image_url': None,
                     'primary_color': '#f97316',
                     'secondary_color': '#ea580c'
                 })
+            except Exception as inner_e:
+                logger.error(f"Error in theme endpoint inner try: {str(inner_e)}", exc_info=True)
+                # في حالة خطأ، نعيد Theme افتراضي
+                return Response({
+                    'tenant_id': str(request.user.tenant.id) if request.user.tenant else None,
+                    'company_name': request.user.tenant.name if request.user.tenant else '',
+                    'logo_url': None,
+                    'background_image_url': None,
+                    'primary_color': '#f97316',
+                    'secondary_color': '#ea580c'
+                }, status=status.HTTP_200_OK)
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Error loading theme: {str(e)}", exc_info=True)
-            return Response(
-                {'error': f'Error loading theme: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            # في حالة أي خطأ، نرجع theme افتراضي بدلاً من 500
+            return Response({
+                'tenant_id': str(request.user.tenant.id) if hasattr(request.user, 'tenant') and request.user.tenant else None,
+                'company_name': request.user.tenant.name if hasattr(request.user, 'tenant') and request.user.tenant else '',
+                'logo_url': None,
+                'background_image_url': None,
+                'primary_color': '#f97316',
+                'secondary_color': '#ea580c'
+            })
     
     def perform_update(self, serializer):
         """تسجيل Audit Log عند تحديث الإعدادات"""

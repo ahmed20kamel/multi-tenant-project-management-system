@@ -40,106 +40,52 @@ export default function ConsultantsPage() {
   const loadConsultants = async () => {
     setLoading(true);
     try {
-      const { data: projects } = await api.get("projects/");
-      const items = Array.isArray(projects) ? projects : (projects?.results || projects?.items || projects?.data || []);
+      // ✅ استخدام API الجديد للاستشاريين
+      const { data } = await api.get("consultants/");
+      const consultantsList = Array.isArray(data) ? data : (data?.results || data?.items || data?.data || []);
       
-      const consultantsMap = new Map();
-
-      await Promise.all(
-        items.map(async (p) => {
-          const projectId = p.id;
-          try {
-            const { data: lic } = await api.get(`projects/${projectId}/license/`);
-            const firstL = Array.isArray(lic) ? lic[0] : null;
-            
-            // جلب بيانات الترسية
-            let awardingData = null;
-            try {
-              const { data: award } = await api.get(`projects/${projectId}/awarding/`);
-              if (Array.isArray(award) && award.length > 0) {
-                awardingData = award[0];
-              }
-            } catch (e) {}
-
-            if (firstL) {
-              // استشاري التصميم
-              if (firstL.design_consultant_name) {
-                const key = firstL.design_consultant_name.toLowerCase().trim();
-                if (!consultantsMap.has(key)) {
-                  consultantsMap.set(key, {
-                    name: firstL.design_consultant_name,
-                    licenseNo: firstL.design_consultant_license_no || "",
-                    type: "design",
-                    projects: [],
-                    fullData: {
-                      design_consultant_name: firstL.design_consultant_name,
-                      design_consultant_license_no: firstL.design_consultant_license_no,
-                    },
-                    awardingData: {},
-                  });
-                }
-                const consultantData = consultantsMap.get(key);
-                // إضافة بيانات الترسية إذا كانت موجودة
-                if (awardingData?.consultant_registration_number) {
-                  consultantData.awardingData = {
-                    consultant_registration_number: awardingData.consultant_registration_number,
-                  };
-                }
-                if (!consultantData.projects.find((pr) => pr.id === projectId)) {
-                  consultantData.projects.push({
-                    id: projectId,
-                    name: p?.display_name || p?.name || `Project #${projectId}`,
-                    internalCode: p?.internal_code,
-                  });
-                }
-              }
-
-              // استشاري الإشراف (إذا كان مختلف)
-              if (firstL.supervision_consultant_name && 
-                  firstL.supervision_consultant_name !== firstL.design_consultant_name) {
-                const key = firstL.supervision_consultant_name.toLowerCase().trim();
-                if (!consultantsMap.has(key)) {
-                  consultantsMap.set(key, {
-                    name: firstL.supervision_consultant_name,
-                    licenseNo: firstL.supervision_consultant_license_no || "",
-                    type: "supervision",
-                    projects: [],
-                    fullData: {
-                      supervision_consultant_name: firstL.supervision_consultant_name,
-                      supervision_consultant_license_no: firstL.supervision_consultant_license_no,
-                    },
-                    awardingData: {},
-                  });
-                }
-                const consultantData = consultantsMap.get(key);
-                // إضافة بيانات الترسية إذا كانت موجودة
-                if (awardingData?.consultant_registration_number) {
-                  consultantData.awardingData = {
-                    consultant_registration_number: awardingData.consultant_registration_number,
-                  };
-                }
-                if (!consultantData.projects.find((pr) => pr.id === projectId)) {
-                  consultantData.projects.push({
-                    id: projectId,
-                    name: p?.display_name || p?.name || `Project #${projectId}`,
-                    internalCode: p?.internal_code,
-                  });
-                }
-              }
+      // ✅ تحويل البيانات إلى الشكل المطلوب مع دمج الأدوار لنفس المشروع
+      const consultantsWithKey = consultantsList.map((consultant) => {
+        // تجميع المشاريع حسب project_id لعدم تكرار نفس المشروع بين تصميم/إشراف
+        const projectMap = new Map();
+        if (consultant.projects && Array.isArray(consultant.projects)) {
+          consultant.projects.forEach((pc) => {
+            const pid = pc.project_id;
+            if (!pid) return;
+            if (!projectMap.has(pid)) {
+              projectMap.set(pid, {
+                id: pid,
+                name: pc.project_name,
+                roles: new Set(),
+              });
             }
-          } catch (e) {}
-        })
-      );
+            projectMap.get(pid).roles.add(pc.role);
+          });
+        }
 
-      const consultantsList = Array.from(consultantsMap.values()).sort((a, b) => 
+        const allProjects = Array.from(projectMap.values()).map((p) => ({
+          id: p.id,
+          name: p.name,
+          roles: Array.from(p.roles),
+        }));
+
+        return {
+          id: consultant.id,
+          name: consultant.name,
+          name_en: consultant.name_en || "",
+          licenseNo: consultant.license_no || "",
+          image: consultant.image_url || null,
+          phone: consultant.phone || "",
+          email: consultant.email || "",
+          address: consultant.address || "",
+          notes: consultant.notes || "",
+          projects: allProjects,
+          projects_count: allProjects.length,
+          __key: `consultant_${consultant.id}`,
+        };
+      }).sort((a, b) =>
         a.name.localeCompare(b.name, isAR ? "ar" : "en")
       );
-
-      // إضافة key فريد لكل استشاري
-      const consultantsWithKey = consultantsList.map((c) => ({
-        ...c,
-        __key: `${c.name.toLowerCase().trim()}_${c.licenseNo || ""}_${c.type}`,
-      }));
 
       setConsultants(consultantsWithKey);
     } catch (e) {
@@ -163,6 +109,7 @@ export default function ConsultantsPage() {
       if (!q) return true;
       return (
         consultant.name.toLowerCase().includes(q) ||
+        consultant.name_en?.toLowerCase().includes(q) ||
         consultant.licenseNo?.toLowerCase().includes(q)
       );
     });
@@ -194,17 +141,22 @@ export default function ConsultantsPage() {
 
   const handleDelete = async () => {
     if (!targetConsultant?.key) return;
-    const key = targetConsultant.key;
+    const consultant = consultants.find((c) => c.__key === targetConsultant.key);
+    if (!consultant?.id) return;
+    
     try {
-      setDeletingKey(key);
-      // حذف من القائمة المحلية (consultants مشتقة من projects)
-      setConsultants((prev) => prev.filter((c) => c.__key !== key));
+      setDeletingKey(targetConsultant.key);
+      // ✅ حذف من API
+      await api.delete(`consultants/${consultant.id}/`);
+      
+      // ✅ حذف من القائمة المحلية
+      setConsultants((prev) => prev.filter((c) => c.__key !== targetConsultant.key));
       setSelectedKeys((prev) => {
         const n = new Set(prev);
-        n.delete(key);
+        n.delete(targetConsultant.key);
         return n;
       });
-      showToast("success", t("delete_success") || "Consultant removed from list");
+      showToast("success", t("delete_success") || "Consultant deleted successfully");
       setConfirmOpen(false);
       setTargetConsultant(null);
     } catch (e) {
@@ -224,11 +176,27 @@ export default function ConsultantsPage() {
     if (selectedKeys.size === 0) return;
     setBulkDeleting(true);
     const keys = Array.from(selectedKeys);
-    setConsultants((prev) => prev.filter((c) => !selectedKeys.has(c.__key)));
-    setSelectedKeys(new Set());
-    setBulkDeleting(false);
-    setBulkConfirmOpen(false);
-    showToast("success", t("bulk_delete_success")?.replace("{{count}}", keys.length) || `Removed ${keys.length} consultants from list`);
+    const consultantsToDelete = consultants.filter((c) => selectedKeys.has(c.__key));
+    
+    try {
+      // ✅ حذف من API
+      await Promise.all(
+        consultantsToDelete
+          .filter((c) => c.id)
+          .map((c) => api.delete(`consultants/${c.id}/`))
+      );
+      
+      // ✅ حذف من القائمة المحلية
+      setConsultants((prev) => prev.filter((c) => !selectedKeys.has(c.__key)));
+      setSelectedKeys(new Set());
+      setBulkConfirmOpen(false);
+      showToast("success", t("bulk_delete_success")?.replace("{{count}}", keys.length) || `Deleted ${keys.length} consultants`);
+    } catch (e) {
+      console.error("Bulk delete failed:", e);
+      showToast("error", t("bulk_delete_error") || "Error deleting consultants");
+    } finally {
+      setBulkDeleting(false);
+    }
   };
 
   const selectedCount = selectedKeys.size;
@@ -236,7 +204,7 @@ export default function ConsultantsPage() {
   const clearFilters = () => setFilters({ q: "" });
 
   const handleConsultantClick = (consultant) => {
-    navigate(`/consultants/${encodeURIComponent(consultant.name)}`, { 
+    navigate(`/consultants/${consultant.id}`, { 
       state: { consultantData: consultant } 
     });
   };
@@ -248,6 +216,14 @@ export default function ConsultantsPage() {
           <div>
             <h1 className="list-title">{t("consultants")}</h1>
             <p className="prj-subtitle">{t("consultants_page_subtitle")}</p>
+          </div>
+          <div>
+            <Button
+              variant="primary"
+              onClick={() => navigate("/consultants/new")}
+            >
+              {t("add_consultant") || "إضافة استشاري جديد"}
+            </Button>
           </div>
         </div>
 
@@ -308,7 +284,6 @@ export default function ConsultantsPage() {
                   <th>#</th>
                   <th>{t("consultant_name")}</th>
                   <th>{t("license_number")}</th>
-                  <th>{t("type")}</th>
                   <th>{t("projects_count")}</th>
                   <th style={{ minWidth: "200px" }}>{t("action")}</th>
                 </tr>
@@ -329,14 +304,14 @@ export default function ConsultantsPage() {
                       <td className="prj-muted">{idx + 1}</td>
                       <td>
                         <div style={{ fontWeight: 500 }}>{consultant.name}</div>
+                        {consultant.name_en && (
+                          <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "4px" }}>
+                            {consultant.name_en}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <code className="prj-code">{consultant.licenseNo || t("empty_value")}</code>
-                      </td>
-                      <td>
-                        <span className="prj-badge is-on">
-                          {consultant.type === "design" ? t("design_consultant") : t("supervision_consultant")}
-                        </span>
                       </td>
                       <td>
                         <span className="prj-badge is-on">
@@ -353,7 +328,7 @@ export default function ConsultantsPage() {
                         </Button>
                         <Button
                           variant="secondary"
-                          onClick={() => navigate(`/consultants/${encodeURIComponent(consultant.name)}/edit`, { state: { consultantData: consultant } })}
+                          onClick={() => navigate(`/consultants/${consultant.id}/edit`, { state: { consultantData: consultant } })}
                           className="prj-btn prj-btn--secondary"
                         >
                           {t("edit")}
@@ -373,7 +348,7 @@ export default function ConsultantsPage() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={7} className="prj-foot prj-muted">
+                  <td colSpan={6} className="prj-foot prj-muted">
                     {t("total")}: {filteredConsultants.length} / {consultants.length} {t("consultants")}
                   </td>
                 </tr>

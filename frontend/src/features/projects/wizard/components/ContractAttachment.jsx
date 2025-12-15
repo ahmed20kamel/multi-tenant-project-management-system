@@ -7,8 +7,9 @@ import FileUpload from "../../../../components/file-upload/FileUpload";
 import FileAttachmentView from "../../../../components/file-upload/FileAttachmentView";
 import DateInput from "../../../../components/fields/DateInput";
 import Button from "../../../../components/common/Button";
+import NumberField from "../../../../components/forms/NumberField";
 import { extractFileNameFromUrl } from "../../../../utils/fileHelpers";
-import { formatDate } from "../../../../utils/formatters";
+import { formatDate, formatMoney } from "../../../../utils/formatters";
 
 const ATTACHMENT_TYPES = [
   { value: "appendix", label: "ملحق عقد" },
@@ -51,6 +52,10 @@ export default function ContractAttachment({
   };
 
   const attachmentTypeLabel = getAttachmentTypeLabel(attachment.type, index);
+  const hasPrice = attachment.price !== undefined && attachment.price !== null && attachment.price !== "";
+  const priceDisplay = hasPrice
+    ? (Number.isFinite(Number(attachment.price)) ? formatMoney(Number(attachment.price)) : attachment.price)
+    : "";
 
   // ✅ تسجيل البيانات للتحقق في وضع العرض
   if (isView && process.env.NODE_ENV === "development") {
@@ -79,39 +84,47 @@ export default function ContractAttachment({
           {/* نوع المرفق - صف كامل */}
           <ViewRow label="نوع المرفق" value={attachmentTypeLabel} />
           
-          {/* التاريخ و الرفع - صف واحد بجانب بعض */}
+          {/* التاريخ والسعر في نفس الصف */}
           <div className="form-grid cols-2" style={{ gap: "16px" }}>
             <ViewRow label="تاريخ المرفق" value={attachment.date ? formatDate(attachment.date, i18n.language) : ""} />
-            <Field label="الملف">
-              {(() => {
-                // ✅ التحقق من وجود file_url مع تسجيل للتحقق
-                const hasFileUrl = !!(attachment.file_url);
-                if (process.env.NODE_ENV === "development") {
-                  console.log("🔍 ContractAttachment render (View Mode):", {
-                    hasFileUrl,
-                    file_url: attachment.file_url,
-                    file_name: attachment.file_name,
-                    attachment_keys: Object.keys(attachment),
-                  });
-                }
-                
-                if (hasFileUrl) {
-                  return (
-                    <FileAttachmentView
-                      fileUrl={attachment.file_url}
-                      fileName={attachment.file_name || extractFileNameFromUrl(attachment.file_url)}
-                      projectId={projectId}
-                      endpoint={`projects/${projectId}/contract/`}
-                    />
-                  );
-                } else {
-                  return (
-                    <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
-                  );
-                }
-              })()}
-            </Field>
+            {hasPrice && (
+              <ViewRow
+                label="سعر الملحق"
+                value={priceDisplay}
+              />
+            )}
           </div>
+
+          {/* رفع الملف أسفل التاريخ والسعر */}
+          <Field label="الملف">
+            {(() => {
+              // ✅ التحقق من وجود file_url مع تسجيل للتحقق
+              const hasFileUrl = !!(attachment.file_url);
+              if (process.env.NODE_ENV === "development") {
+                console.log("🔍 ContractAttachment render (View Mode):", {
+                  hasFileUrl,
+                  file_url: attachment.file_url,
+                  file_name: attachment.file_name,
+                  attachment_keys: Object.keys(attachment),
+                });
+              }
+              
+              if (hasFileUrl) {
+                return (
+                  <FileAttachmentView
+                    fileUrl={attachment.file_url}
+                    fileName={attachment.file_name || extractFileNameFromUrl(attachment.file_url)}
+                    projectId={projectId}
+                    endpoint={`projects/${projectId}/contract/`}
+                  />
+                );
+              } else {
+                return (
+                  <div className="card text-center prj-muted p-20">لا يوجد ملف</div>
+                );
+              }
+            })()}
+          </Field>
           
           {/* الملاحظات - صف كامل */}
           {attachment.notes && (
@@ -163,7 +176,7 @@ export default function ContractAttachment({
           />
         </Field>
 
-        {/* التاريخ و الرفع - صف واحد بجانب بعض */}
+        {/* التاريخ والسعر في نفس الصف */}
         <div className="form-grid cols-2" style={{ gap: "16px" }}>
           <Field label="تاريخ المرفق">
             <DateInput
@@ -172,28 +185,37 @@ export default function ContractAttachment({
               onChange={(value) => onUpdate(actualIndex, "date", value)}
             />
           </Field>
-          <Field label="رفع الملف">
-            <FileUpload
-              value={attachment.file}
-              onChange={(file) => onUpdate(actualIndex, "file", file)}
-              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-              maxSizeMB={10}
-              showPreview={true}
-              existingFileUrl={attachment.file_url}
-              existingFileName={attachment.file_name || (attachment.file_url ? extractFileNameFromUrl(attachment.file_url) : "")}
-              onRemoveExisting={() => {
-                // ✅ إزالة الملف الموجود (file_url و file_name) عند الحذف
-                onUpdate(actualIndex, "file_url", null);
-                onUpdate(actualIndex, "file_name", null);
-                onUpdate(actualIndex, "file", null);
-              }}
-              compressionOptions={{
-                maxSizeMB: 1,
-                maxWidthOrHeight: 1920,
-              }}
+          <Field label="سعر الملحق">
+            <NumberField
+              value={attachment.price ?? ""}
+              onChange={(v) => onUpdate(actualIndex, "price", v)}
+              min={0}
             />
           </Field>
         </div>
+
+        {/* رفع الملف - صف كامل أسفل التاريخ والسعر */}
+        <Field label="رفع الملف">
+          <FileUpload
+            value={attachment.file}
+            onChange={(file) => onUpdate(actualIndex, "file", file)}
+            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+            maxSizeMB={10}
+            showPreview={true}
+            existingFileUrl={attachment.file_url}
+            existingFileName={attachment.file_name || (attachment.file_url ? extractFileNameFromUrl(attachment.file_url) : "")}
+            onRemoveExisting={() => {
+              // ✅ إزالة الملف الموجود (file_url و file_name) عند الحذف
+              onUpdate(actualIndex, "file_url", null);
+              onUpdate(actualIndex, "file_name", null);
+              onUpdate(actualIndex, "file", null);
+            }}
+            compressionOptions={{
+              maxSizeMB: 1,
+              maxWidthOrHeight: 1920,
+            }}
+          />
+        </Field>
 
         {/* الملاحظات - صف كامل */}
         <Field label="ملاحظات (اختياري)">

@@ -423,6 +423,88 @@ class SitePlanOwner(TimeStampedModel):
         return self.owner_name_ar or self.owner_name_en or "Unnamed Owner"
 
 
+# ====== الاستشاري ======
+class Consultant(TimeStampedModel):
+    """نموذج الاستشاري - كيان مستقل مع بيانات موحدة"""
+    name = models.CharField(max_length=200, help_text="اسم الاستشاري (عربي)")
+    name_en = models.CharField(max_length=200, blank=True, help_text="اسم الاستشاري (إنجليزي)")
+    license_no = models.CharField(max_length=120, blank=True, help_text="رقم رخصة الاستشاري")
+    
+    # صورة الاستشاري
+    def get_consultant_image_path(instance, filename):
+        """حفظ صورة الاستشاري"""
+        ext = filename.split('.')[-1] if '.' in filename else 'jpg'
+        consultant_id = instance.id or "new"
+        return f"consultants/{consultant_id}/image.{ext}"
+    
+    image = models.ImageField(
+        upload_to=get_consultant_image_path,
+        null=True,
+        blank=True,
+        help_text="صورة الاستشاري"
+    )
+    
+    # بيانات إضافية
+    phone = models.CharField(max_length=20, blank=True, help_text="رقم الهاتف")
+    email = models.EmailField(blank=True, help_text="البريد الإلكتروني")
+    address = models.TextField(blank=True, help_text="العنوان")
+    notes = models.TextField(blank=True, help_text="ملاحظات")
+    
+    class Meta:
+        verbose_name = "استشاري"
+        verbose_name_plural = "استشاريون"
+        # منع تكرار الاستشاريين بنفس الاسم في نفس الشركة (إذا لم يكن هناك رخصة)
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['tenant', 'name']),
+            models.Index(fields=['tenant', 'license_no']),
+        ]
+    
+    def __str__(self):
+        return f"{self.name} ({self.license_no or 'No License'})"
+
+
+# ====== ربط الاستشاري بالمشاريع ======
+class ProjectConsultant(TimeStampedModel):
+    """ربط الاستشاري بالمشروع مع تحديد الدور (تصميم/إشراف)"""
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='consultants',
+        help_text="المشروع"
+    )
+    consultant = models.ForeignKey(
+        Consultant,
+        on_delete=models.CASCADE,
+        related_name='projects',
+        help_text="الاستشاري"
+    )
+    ROLE_CHOICES = [
+        ('design', 'استشاري التصميم'),
+        ('supervision', 'استشاري الإشراف'),
+    ]
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        help_text="دور الاستشاري في المشروع"
+    )
+    
+    class Meta:
+        verbose_name = "استشاري المشروع"
+        verbose_name_plural = "استشاريو المشاريع"
+        # منع تكرار نفس الاستشاري بنفس الدور في نفس المشروع
+        unique_together = [['project', 'consultant', 'role']]
+        ordering = ['project', 'role']
+        indexes = [
+            models.Index(fields=['project', 'role']),
+            models.Index(fields=['consultant', 'role']),
+        ]
+    
+    def __str__(self):
+        role_display = dict(self.ROLE_CHOICES).get(self.role, self.role)
+        return f"{self.consultant.name} - {role_display} ({self.project.name or self.project.id})"
+
+
 # ====== ترخيص البناء ======
 class BuildingLicense(TimeStampedModel):
     project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name="license")
@@ -469,15 +551,56 @@ class BuildingLicense(TimeStampedModel):
     # ===== استشاري التصميم / الإشراف =====
     consultant_same = models.BooleanField(default=True)
 
-    # استشاري التصميم
+    # ✅ الاستشاريون الجدد (موصى به)
+    design_consultant = models.ForeignKey(
+        Consultant,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='design_licenses',
+        help_text="استشاري التصميم"
+    )
+    supervision_consultant = models.ForeignKey(
+        Consultant,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='supervision_licenses',
+        help_text="استشاري الإشراف"
+    )
+
+    # ⚠️ الحقول القديمة (للتوافق مع البيانات الموجودة - سيتم إهمالها تدريجياً)
     design_consultant_name = models.CharField(max_length=200, blank=True)
     design_consultant_name_en = models.CharField(max_length=200, blank=True)
     design_consultant_license_no = models.CharField(max_length=120, blank=True)
 
-    # استشاري الإشراف
     supervision_consultant_name = models.CharField(max_length=200, blank=True)
     supervision_consultant_name_en = models.CharField(max_length=200, blank=True)
     supervision_consultant_license_no = models.CharField(max_length=120, blank=True)
+    
+    def get_design_consultant_name(self):
+        """الحصول على اسم استشاري التصميم (من Consultant أو الحقل القديم)"""
+        if self.design_consultant:
+            return self.design_consultant.name
+        return self.design_consultant_name or ""
+    
+    def get_design_consultant_name_en(self):
+        """الحصول على الاسم الإنجليزي لاستشاري التصميم"""
+        if self.design_consultant:
+            return self.design_consultant.name_en or ""
+        return self.design_consultant_name_en or ""
+    
+    def get_supervision_consultant_name(self):
+        """الحصول على اسم استشاري الإشراف"""
+        if self.supervision_consultant:
+            return self.supervision_consultant.name
+        return self.supervision_consultant_name or ""
+    
+    def get_supervision_consultant_name_en(self):
+        """الحصول على الاسم الإنجليزي لاستشاري الإشراف"""
+        if self.supervision_consultant:
+            return self.supervision_consultant.name_en or ""
+        return self.supervision_consultant_name_en or ""
 
     contractor_name = models.CharField(max_length=200, blank=True)
     contractor_name_en = models.CharField(max_length=200, blank=True)
