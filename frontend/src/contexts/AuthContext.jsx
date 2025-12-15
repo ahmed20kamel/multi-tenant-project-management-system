@@ -209,6 +209,7 @@ export function AuthProvider({ children }) {
             } catch (e) {
               // Silent fail
             }
+          }
         }
         return null;
       }
