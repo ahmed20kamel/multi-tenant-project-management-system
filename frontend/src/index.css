@@ -4,7 +4,7 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; padding: 0; }
-body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; line-height: 1.65; }
+body { margin: 0; -webkit-font-smoothing: antialiased; line-height: 1.65; }
 
 /* ================= DESIGN TOKENS ================= */
 :root{

@@ -695,8 +695,9 @@
   .invoice-print-items-table,
   .invoice-print-summary,
   .invoice-print-footer {
-    orphans: 3;
-    widows: 3;
+    /* orphans and widows are print-specific CSS properties - using page-break instead for better compatibility */
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 
   .invoice-print-items-table thead {

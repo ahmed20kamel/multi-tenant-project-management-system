@@ -72,8 +72,9 @@ export default function Layout({ children }) {
         '--color-primary': appliedPrimary,
         '--color-secondary': appliedSecondary,
       });
-    } else if (!tenantTheme) {
-      console.warn('⚠️ No tenantTheme available to apply');
+    } else if (!tenantTheme && user && !user.is_superuser) {
+      // ✅ تقليل التحذيرات - فقط عند الحاجة
+      // لا نعرض تحذير إذا كان المستخدم superuser أو لم يتم تسجيل الدخول بعد
     }
   }, [tenantTheme, user]);
 

@@ -192,28 +192,48 @@ export function AuthProvider({ children }) {
       
       return themeData;
     } catch (error) {
-      console.error('❌ Error loading tenant theme from API:', error);
-      console.error('Error details:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message,
-      });
+      // ✅ تقليل التحذيرات - فقط تسجيل الأخطاء المهمة
+      const status = error.response?.status;
+      
+      // إذا كان الخطأ 401 (Unauthorized)، لا نعرض تحذير - هذا طبيعي قبل تسجيل الدخول
+      if (status === 401) {
+        // استخدام stored theme كـ fallback فقط إذا كان مطلوب
+        if (useStoredAsFallback) {
+          const storedTheme = localStorage.getItem('tenant_theme');
+          if (storedTheme) {
+            try {
+              const themeData = JSON.parse(storedTheme);
+              setTenantTheme(themeData);
+              applyTheme(themeData);
+              return themeData;
+            } catch (e) {
+              // Silent fail
+            }
+        }
+        return null;
+      }
+      
+      // ✅ تسجيل الأخطاء الأخرى فقط (404, 403, 500, etc.)
+      if (status !== 401) {
+        console.error('❌ Error loading tenant theme from API:', {
+          status: status,
+          message: error.message,
+        });
+      }
       
       // إذا كان الخطأ 404 أو 403، لا نستخدم Theme افتراضي
-      if (error.response?.status === 404 || error.response?.status === 403) {
-        console.warn('⚠️ User does not have tenant theme access');
+      if (status === 404 || status === 403) {
         // إذا كان مطلوب استخدام stored theme كـ fallback
         if (useStoredAsFallback) {
           const storedTheme = localStorage.getItem('tenant_theme');
           if (storedTheme) {
             try {
               const themeData = JSON.parse(storedTheme);
-              console.log('📦 Using stored theme as fallback:', themeData);
               setTenantTheme(themeData);
               applyTheme(themeData);
               return themeData;
             } catch (e) {
-              console.error('Error parsing stored theme:', e);
+              // Silent fail
             }
           }
         }
