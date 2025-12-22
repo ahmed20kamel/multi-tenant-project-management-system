@@ -1,16 +1,17 @@
 # backend/backend/settings.py
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv()
 
 # =========================
 # Security
 # =========================
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret-key-change-in-prod")
 
-# DEBUG: خليها False على Render بمتغيّر بيئة
-DEBUG = os.getenv("DEBUG", "True").lower() == "true"
+SECRET_KEY = os.getenv("SECRET_KEY")
+DEBUG = os.getenv("DEBUG") == "True"
 
 ALLOWED_HOSTS = [
     "localhost",
@@ -87,10 +88,15 @@ TEMPLATES = [{
 # =========================
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME"),
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST": os.getenv("DB_HOST"),
+        "PORT": os.getenv("DB_PORT"),
     }
 }
+
 
 # =========================
 # CORS / CSRF
