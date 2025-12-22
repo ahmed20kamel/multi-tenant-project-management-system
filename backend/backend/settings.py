@@ -1,16 +1,18 @@
-# backend/backend/settings.py
 from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+load_dotenv()  # local فقط
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv()
 
 # =========================
 # Security
 # =========================
-
 SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise Exception("SECRET_KEY is missing")
+
 DEBUG = os.getenv("DEBUG") == "True"
 
 ALLOWED_HOSTS = [
